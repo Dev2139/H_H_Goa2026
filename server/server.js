@@ -100,17 +100,32 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Connect to MongoDB & Start Server
+// Connect to MongoDB & Start Server (Serverless-friendly connection handler)
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/hh-goa-2026';
 
-mongoose.connect(MONGODB_URI)
-  .then(() => {
+let isConnected = false;
+const connectDB = async () => {
+  if (isConnected) return;
+  try {
+    const db = await mongoose.connect(MONGODB_URI);
+    isConnected = db.connections[0].readyState === 1;
     console.log('Connected to MongoDB Database.');
-    app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-    });
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error('MongoDB database connection error:', err);
-    process.exit(1);
+  }
+};
+
+// Ensure database connection is active for every incoming API request
+app.use(async (req, res, next) => {
+  await connectDB();
+  next();
+});
+
+// Only listen to port in local development (Vercel uses the default export)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
   });
+}
+
+export default app;
