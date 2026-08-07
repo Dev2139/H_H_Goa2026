@@ -26,10 +26,10 @@ app.use(helmet({
   contentSecurityPolicy: false // disabled or tailored to support dynamic redirects / OG tag parsing
 }));
 
-// CORS Configuration
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:5173',
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
   'https://hh-goa-frame-generator.vercel.app' // Example production URL
 ];
 

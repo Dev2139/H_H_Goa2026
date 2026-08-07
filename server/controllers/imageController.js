@@ -71,18 +71,38 @@ export const generateFrame = async (req, res) => {
     }
 
     const shareId = generateShortId();
-    console.log(`Generating PFP Frame for shareId: ${shareId}, enhance: ${enhance}`);
+    
+    // Upload original photo to Cloudinary / storage if uploaded directly
+    let originalImageUrl = req.body.photoUrl || '';
+    if (req.file) {
+      const originalFilename = `raw-${Date.now()}-${generateShortId()}.png`;
+      originalImageUrl = await uploadImage(buffer, originalFilename, 'hh-goa-2026/uploads', req);
+    }
+
+    // Capture fine-tuning parameters
+    const params = {
+      zoom: parseFloat(req.body.zoom) || 1.0,
+      panX: parseInt(req.body.panX) || 0,
+      panY: parseInt(req.body.panY) || 0,
+      brightness: parseInt(req.body.brightness) || 100,
+      filter: req.body.filter || 'normal',
+      style: req.body.style || 'emerald',
+      stickers: req.body.stickers || ''
+    };
+
+    console.log(`Generating PFP Frame for shareId: ${shareId}, style: ${params.style}, filter: ${params.filter}`);
     
     // Generate the PFP
-    const generatedBuffer = await generateProfileFrame(buffer, enhance);
+    const generatedBuffer = await generateProfileFrame(buffer, params);
     
     // Upload generated PNG
     const filename = `pfp-${shareId}.png`;
     const generatedImageUrl = await uploadImage(generatedBuffer, filename, 'hh-goa-2026/generated', req);
 
-    // Save record to DB
+    // Save record to DB with original image link
     const imageRecord = new Image({
       imageType: 'frame',
+      originalImageUrl,
       generatedImageUrl,
       shareId
     });
@@ -100,7 +120,7 @@ export const generateFrame = async (req, res) => {
  */
 export const generateCard = async (req, res) => {
   try {
-    const { name, role, stack } = req.body;
+    const { name, role, stack, builderTitle } = req.body;
     const enhance = req.body.enhance === 'true' || req.body.enhance === true;
 
     if (!name || !role || !stack) {
@@ -127,34 +147,53 @@ export const generateCard = async (req, res) => {
     }
 
     const shareId = generateShortId();
-    const builderTitle = getRandomBuilderTitle();
+    const finalBuilderTitle = builderTitle || getRandomBuilderTitle();
     
+    // Upload original photo to Cloudinary / storage if uploaded directly
+    let originalImageUrl = req.body.photoUrl || '';
+    if (req.file) {
+      const originalFilename = `raw-${Date.now()}-${generateShortId()}.png`;
+      originalImageUrl = await uploadImage(buffer, originalFilename, 'hh-goa-2026/uploads', req);
+    }
+
     // Construct dynamic sharing url
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const shareUrl = `${frontendUrl}/share/${shareId}`;
 
-    console.log(`Generating Builder Card for ${name} (${shareId}), Title: ${builderTitle}, enhance: ${enhance}`);
+    // Capture fine-tuning parameters
+    const params = {
+      zoom: parseFloat(req.body.zoom) || 1.0,
+      panX: parseInt(req.body.panX) || 0,
+      panY: parseInt(req.body.panY) || 0,
+      brightness: parseInt(req.body.brightness) || 100,
+      filter: req.body.filter || 'normal',
+      style: req.body.style || 'emerald',
+      stickers: req.body.stickers || ''
+    };
+
+    console.log(`Generating Builder Card for ${name} (${shareId}), Title: ${finalBuilderTitle}, Style: ${params.style}`);
 
     // Generate Card Buffer
     const generatedBuffer = await generateBuilderCard(buffer, {
       name,
       role,
       stack,
-      builderTitle,
+      builderTitle: finalBuilderTitle,
       shareUrl
-    }, enhance);
+    }, params);
 
     // Upload final card
     const filename = `card-${shareId}.png`;
     const generatedImageUrl = await uploadImage(generatedBuffer, filename, 'hh-goa-2026/generated', req);
 
-    // Save record to DB
+    // Save record to DB with original image link
     const imageRecord = new Image({
       name,
       role,
       stack,
-      builderTitle,
+      builderTitle: finalBuilderTitle,
       imageType: 'card',
+      originalImageUrl,
       generatedImageUrl,
       shareId
     });

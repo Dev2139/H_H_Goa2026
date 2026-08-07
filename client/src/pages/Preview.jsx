@@ -135,7 +135,7 @@ export default function Preview() {
             {error || 'The requested badge does not exist. Please note that all generated images automatically expire and are deleted after 24 hours.'}
           </p>
           <button
-            onClick={() => navigate('/generate')}
+            onClick={() => navigate('/')}
             className="w-full rounded-2xl bg-gradient-to-r from-brand-purple to-brand-blue py-3.5 text-sm font-bold text-white shadow-lg"
           >
             Create a New Badge
@@ -154,7 +154,7 @@ export default function Preview() {
       {/* Back button */}
       <div className="mb-8">
         <button
-          onClick={() => navigate('/generate')}
+          onClick={() => navigate('/')}
           className="inline-flex items-center gap-2 text-sm font-semibold text-slate-400 hover:text-white transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -261,7 +261,7 @@ export default function Preview() {
 
           <div className="border-t border-white/5 pt-6 flex items-center justify-between">
             <button
-              onClick={() => navigate('/generate')}
+              onClick={() => navigate('/')}
               className="inline-flex items-center gap-2 text-sm font-bold text-brand-orange hover:text-white transition-colors"
             >
               <RefreshCw className="h-4 w-4" />

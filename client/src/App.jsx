@@ -2,11 +2,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Header from './components/Header';
 import Footer from './components/Footer';
-import Landing from './pages/Landing';
 import Generator from './pages/Generator';
 import Preview from './pages/Preview';
-import About from './pages/About';
-import Privacy from './pages/Privacy';
 import NotFound from './pages/NotFound';
 
 export default function App() {
@@ -23,11 +20,8 @@ export default function App() {
         {/* Main Content Area */}
         <main className="flex-grow z-10 flex flex-col justify-center">
           <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/generate" element={<Generator />} />
+            <Route path="/" element={<Generator />} />
             <Route path="/share/:shareId" element={<Preview />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/privacy" element={<Privacy />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

@@ -38,41 +38,45 @@ if (isCloudinaryConfigured) {
  */
 export const uploadImage = async (buffer, filename, folder = 'hh-goa-2026', req = null) => {
   if (isCloudinaryConfigured) {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: folder,
-          resource_type: 'image',
-          public_id: path.parse(filename).name,
-          format: 'png' // ensure high-quality PNG format
-        },
-        (error, result) => {
-          if (error) {
-            console.error('Cloudinary upload error:', error);
-            reject(error);
-          } else {
-            resolve(result.secure_url);
+    try {
+      return await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: folder,
+            resource_type: 'image',
+            public_id: path.parse(filename).name,
+            format: 'png' // ensure high-quality PNG format
+          },
+          (error, result) => {
+            if (error) {
+              console.error('Cloudinary upload error:', error);
+              reject(error);
+            } else {
+              resolve(result.secure_url);
+            }
           }
-        }
-      );
-      uploadStream.end(buffer);
-    });
-  } else {
-    // Local fallback storage
-    const localFilePath = path.join(uploadsDir, filename);
-    await fs.promises.writeFile(localFilePath, buffer);
-    
-    // Construct dynamic server URL based on the request
-    if (req) {
-      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-      const host = req.get('host');
-      return `${protocol}://${host}/uploads/${filename}`;
+        );
+        uploadStream.end(buffer);
+      });
+    } catch (uploadError) {
+      console.warn('Cloudinary upload failed, falling back to local static disk storage:', uploadError.message || uploadError);
     }
-    
-    // If request context isn't available, return fallback relative path
-    const port = process.env.PORT || 5000;
-    return `http://localhost:${port}/uploads/${filename}`;
   }
+
+  // Local fallback storage
+  const localFilePath = path.join(uploadsDir, filename);
+  await fs.promises.writeFile(localFilePath, buffer);
+  
+  // Construct dynamic server URL based on the request
+  if (req) {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    return `${protocol}://${host}/uploads/${filename}`;
+  }
+  
+  // If request context isn't available, return fallback relative path
+  const port = process.env.PORT || 5000;
+  return `http://localhost:${port}/uploads/${filename}`;
 };
 
 /**

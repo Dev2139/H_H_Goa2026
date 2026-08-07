@@ -1,74 +1,153 @@
 import { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Upload, Camera, User, Briefcase, Cpu, Sparkles, 
-  RefreshCw, CheckCircle, AlertCircle, ArrowRight
+  Upload, Camera, User, Sparkles, 
+  Volume2, VolumeX, Eye, Maximize2, Download, Twitter, Award, Sliders, RefreshCw
 } from 'lucide-react';
 import { generateFrame, generateCard } from '../services/api';
 import toast from 'react-hot-toast';
 
 export default function Generator() {
   const navigate = useNavigate();
-  const location = useLocation();
   
-  // Set tab based on landing page selection or default to 'frame'
-  const [activeTab, setActiveTab] = useState('frame');
+  // Base states
+  const [activeTab, setActiveTab] = useState('card'); // Default to card tab
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [isHeic, setIsHeic] = useState(false);
-  
+  const [soundOn, setSoundOn] = useState(true);
+
+  // Position, zoom, & fine-tuning states
+  const [zoom, setZoom] = useState(1.0);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [brightness, setBrightness] = useState(100);
+  const [colorFilter, setColorFilter] = useState('normal');
+  const [selectedStyle, setSelectedStyle] = useState('emerald'); // For PFP frame style selection
+
+  // Drag-to-pan states
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
   // Generation & progress state
   const [isGenerating, setIsGenerating] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [generationStep, setGenerationStep] = useState(0);
-  const [enhanceColors, setEnhanceColors] = useState(true);
-  const [removeBg, setRemoveBg] = useState(false);
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm({
+  const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm({
     defaultValues: {
       name: '',
-      role: '',
-      stack: ''
+      stack: 'React, Node.js, Python, MongoDB, Docker, Figma',
+      builderTitle: 'merge conflictor'
     }
   });
 
-  useEffect(() => {
-    if (location.state?.initialTab) {
-      setActiveTab(location.state.initialTab);
-    }
-  }, [location]);
+  const watchedName = watch('name') || 'Dev Patel';
+  const watchedStack = watch('stack') || 'React, Node.js, Python, MongoDB, Docker, Figma';
+  const watchedTitle = watch('builderTitle') || 'merge conflictor';
 
-  // Handle file drop validation
+  // Drag-to-pan handlers
+  const handlePointerDown = (e) => {
+    if (!file || !previewUrl) return;
+    setIsDraggingPhoto(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setPanStart({ x: panX, y: panY });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e) => {
+    if (!isDraggingPhoto) return;
+    const diffX = e.clientX - dragStart.x;
+    const diffY = e.clientY - dragStart.y;
+    
+    const newPanX = Math.max(-180, Math.min(180, Math.round(panStart.x + diffX)));
+    const newPanY = Math.max(-180, Math.min(180, Math.round(panStart.y + diffY)));
+    
+    setPanX(newPanX);
+    setPanY(newPanY);
+  };
+
+  const handlePointerUp = () => {
+    setIsDraggingPhoto(false);
+  };
+
+  // List of titles for the randomize feature
+  const builderTitles = [
+    'merge conflictor',
+    'frontend wizard',
+    'fullstack mechanic',
+    'bug creator',
+    'git destroyer',
+    'coffee compiler',
+    'css whisperer',
+    'pixel pusher',
+    'stackoverflower',
+    'async awaiter',
+    'console logger',
+    'merge master'
+  ];
+
+  const handleRandomizeTitle = () => {
+    if (soundOn) playClickSound();
+    const randomIndex = Math.floor(Math.random() * builderTitles.length);
+    setValue('builderTitle', builderTitles[randomIndex]);
+  };
+
+  // Retro sound trigger
+  const playClickSound = () => {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(450, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.08);
+    } catch (e) {
+      console.warn('Audio synthesis failed:', e);
+    }
+  };
+
+  const handleResetPhoto = () => {
+    if (soundOn) playClickSound();
+    setZoom(1.0);
+    setPanX(0);
+    setPanY(0);
+    setBrightness(100);
+    setColorFilter('normal');
+    toast.success('Position and zoom reset.');
+  };
+
+  // Drag & Drop
   const onDrop = (acceptedFiles, rejectedFiles) => {
     if (rejectedFiles && rejectedFiles.length > 0) {
-      const err = rejectedFiles[0].errors[0];
-      if (err.code === 'file-too-large') {
-        toast.error('Image is too large. Maximum size allowed is 10MB.');
-      } else {
-        toast.error(err.message || 'File upload rejected.');
-      }
+      toast.error('Image size must be less than 10MB.');
       return;
     }
-
     if (acceptedFiles.length === 0) return;
-
+    
+    if (soundOn) playClickSound();
     const selectedFile = acceptedFiles[0];
     const extension = selectedFile.name.split('.').pop().toLowerCase();
     
     setFile(selectedFile);
     setIsHeic(extension === 'heic' || extension === 'heif');
 
-    // Create object URL for standard images, HEIC can't be rendered directly by browsers
     if (extension !== 'heic' && extension !== 'heif') {
-      const objectUrl = URL.createObjectURL(selectedFile);
-      setPreviewUrl(objectUrl);
+      setPreviewUrl(URL.createObjectURL(selectedFile));
     } else {
-      setPreviewUrl(''); // Clear preview but store file
+      setPreviewUrl('');
     }
-    toast.success('Image loaded successfully.');
+    toast.success('Photo loaded successfully.');
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -80,57 +159,35 @@ export default function Generator() {
       'image/heic': ['.heic'],
       'image/heif': ['.heif']
     },
-    maxSize: 10 * 1024 * 1024, // 10MB
+    maxSize: 10 * 1024 * 1024,
     multiple: false
   });
 
-  const clearFile = () => {
-    setFile(null);
-    setPreviewUrl('');
-    setIsHeic(false);
-  };
-
-  // Generation progress steps list
-  const pfpSteps = [
-    'Reading image details...',
-    'Uploading image (HEIC conversion auto-run)...',
-    'Applying smart center cover-crop...',
-    'Executing circular mask cutout...',
-    'Rendering HH Goa 2026 beach frame overlay...',
-    'Compressing PNG and finalizing upload...'
+  const generationSteps = [
+    'Reading metadata configurations...',
+    'Uploading image stream to buffer...',
+    'Applying filters and canvas transformations...',
+    'Rendering certified bubble badges...',
+    'Mapping skills indicators...',
+    'Generating secure pass layout...',
+    'Exporting final badge card...'
   ];
 
-  const cardSteps = [
-    'Reading metadata and image data...',
-    'Uploading content to image pipeline...',
-    'Drawing neon gradients and glassmorphism borders...',
-    'Engraving name, role, and tech stack details...',
-    'Rolling randomized builder title badge...',
-    'Generating QR code pointing to public share page...',
-    'Compositing all badge layers and graphics...'
-  ];
-
-  const stepsList = activeTab === 'frame' ? pfpSteps : cardSteps;
-
-  // Set up ticker to update loading description text
   useEffect(() => {
     let interval;
     if (isGenerating) {
       setGenerationStep(0);
       interval = setInterval(() => {
         setGenerationStep((prev) => {
-          if (prev < stepsList.length - 1) {
-            return prev + 1;
-          }
+          if (prev < generationSteps.length - 1) return prev + 1;
           return prev;
         });
-      }, 700);
-    } else {
-      setGenerationStep(0);
+      }, 550);
     }
     return () => clearInterval(interval);
-  }, [isGenerating, activeTab, stepsList.length]);
+  }, [isGenerating]);
 
+  // Form submit handler
   const onSubmit = async (data) => {
     if (!file) {
       toast.error('Please upload a photo first.');
@@ -140,447 +197,687 @@ export default function Generator() {
     setIsGenerating(true);
     setUploadProgress(0);
 
+    const params = {
+      zoom,
+      panX,
+      panY,
+      brightness,
+      filter: colorFilter,
+      style: selectedStyle
+    };
+
     try {
       let res;
+      const fileOrUrl = file === 'sample' ? previewUrl : file;
+      
       if (activeTab === 'frame') {
-        res = await generateFrame(
-          file, 
-          enhanceColors, 
-          (progressEvent) => {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(percentCompleted);
-          }
-        );
+        res = await generateFrame(fileOrUrl, params, (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(percent);
+        });
       } else {
-        res = await generateCard(
-          file, 
-          {
-            name: data.name,
-            role: data.role,
-            stack: data.stack
-          },
-          enhanceColors, 
-          (progressEvent) => {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(percentCompleted);
-          }
-        );
+        // Role is fixed to 'Builder @ HH Goa 2026' on every card
+        res = await generateCard(fileOrUrl, {
+          name: data.name,
+          role: 'Builder @ HH Goa 2026',
+          stack: data.stack,
+          builderTitle: data.builderTitle
+        }, params, (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(percent);
+        });
       }
 
-      toast.success('Successfully generated badge!');
-      // Navigate to share/preview page passing state so we know it was freshly generated (confetti trigger)
+      toast.success('Pass generated successfully!');
       navigate(`/share/${res.data.shareId}`, { state: { justGenerated: true } });
     } catch (err) {
-      console.error('Generation failed:', err);
-      toast.error(err.response?.data?.error || 'Failed to generate frame. Please try again.');
+      console.error(err);
+      toast.error(err.response?.data?.error || 'Failed to render badge card.');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  return (
-    <div className="mx-auto max-w-5xl px-4 py-12 sm:py-20 lg:py-24 relative z-10">
-      
-      {/* Title Header */}
-      <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-16">
-        <h1 className="text-3xl sm:text-5xl font-sans font-black text-white">
-          Create Your <span className="text-gradient">HH Goa 2026</span> Badge
-        </h1>
-        <p className="mt-4 text-sm sm:text-base text-slate-400">
-          Upload a selfie or profile picture, choose your configuration, and get your beautiful branded image instantly.
-        </p>
-      </div>
+  // Color mappings for Format A: PFP frame preview styles
+  const themeColors = {
+    emerald: { gradients: ['#10B981', '#059669', '#047857', '#065F46'] },
+    sunset: { gradients: ['#FF4E50', '#F9D423', '#FF5E62', '#E11D48'] },
+    cyber: { gradients: ['#00F2FE', '#4FACFE', '#38BDF8', '#0284C7'] },
+    coastal: { gradients: ['#3B82F6', '#06B6D4', '#2563EB', '#1E40AF'] },
+    retro: { gradients: ['#D946EF', '#8B5CF6', '#F59E0B', '#FF0844'] },
+    gold: { gradients: ['#B45309', '#D97706', '#FBBF24', '#FCD34D'] }
+  };
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+  // Real-time CSS adjustments matching slider states
+  const previewImageStyle = {
+    transform: `scale(${zoom}) translate(${panX}px, ${panY}px)`,
+    filter: `brightness(${brightness}%) ${
+      colorFilter === 'grayscale' ? 'grayscale(100%)' :
+      colorFilter === 'sepia' ? 'sepia(100%)' :
+      colorFilter === 'cool' ? 'hue-rotate(30deg) saturate(125%)' :
+      colorFilter === 'warm' ? 'hue-rotate(-30deg) saturate(125%)' : ''
+    }`,
+    transition: isDraggingPhoto ? 'none' : 'transform 0.05s ease-out'
+  };
+
+  const hasPhoto = file && previewUrl;
+
+  return (
+    <div className="min-h-screen bg-[#080B16] text-[#00F2FE] font-mono px-4 py-8 relative select-none">
+      <div className="absolute inset-0 bg-grid-pattern opacity-[0.02] pointer-events-none" />
+
+      {/* Main Studio Frame Layout - Twilight Ocean Style */}
+      <div className="mx-auto max-w-7xl flex flex-col gap-6">
         
-        {/* Left Side: Upload & Customization Form (8 cols) */}
-        <div className="lg:col-span-7 flex flex-col gap-6">
-          
-          {/* Tab Selector */}
-          <div className="flex rounded-2xl border border-white/5 bg-brand-card p-1">
-            <button
-              onClick={() => { if(!isGenerating) setActiveTab('frame'); }}
-              disabled={isGenerating}
-              className={`flex-1 rounded-xl py-3.5 text-sm font-extrabold transition-all duration-300 ${
-                activeTab === 'frame'
-                  ? 'bg-gradient-to-r from-brand-purple to-brand-blue text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Profile Frame (Format A)
-            </button>
-            <button
-              onClick={() => { if(!isGenerating) setActiveTab('card'); }}
-              disabled={isGenerating}
-              className={`flex-1 rounded-xl py-3.5 text-sm font-extrabold transition-all duration-300 ${
-                activeTab === 'card'
-                  ? 'bg-gradient-to-r from-brand-purple to-brand-blue text-white shadow-md'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Builder ID Card (Format B)
-            </button>
+        {/* ================= HEADER BAR ================= */}
+        <div className="border border-[#00F2FE]/20 bg-[#0F1322] rounded-xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-2.5 h-2.5 border-t-2 border-l-2 border-[#00F2FE]" />
+          <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t-2 border-r-2 border-[#00F2FE]" />
+          <div className="absolute bottom-0 left-0 w-2.5 h-2.5 border-b-2 border-l-2 border-[#00F2FE]" />
+          <div className="absolute bottom-0 right-0 w-2.5 h-2.5 border-b-2 border-r-2 border-[#00F2FE]" />
+
+          {/* Logo Brand Title */}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <div className="bg-[#FDE047] text-black font-black px-3 py-1.5 rounded text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-[3px_3px_0px_0px_#000]">
+              <Sparkles className="h-4 w-4 animate-pulse" />
+              2:47PM STUDIO
+            </div>
+            
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="font-sans font-black text-xl sm:text-2xl tracking-tighter text-white uppercase">
+                  HACKER HOUSE
+                </span>
+                <span className="bg-[#EC4899] text-white text-[10px] sm:text-xs font-black px-2 py-0.5 rounded shadow-[1.5px_1.5px_0px_0px_#000]">
+                  गोवा
+                </span>
+                <span className="border border-[#EAB308]/40 text-[#EAB308] text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded bg-[#EAB308]/5 tracking-widest font-sans">
+                  28-31 OCT 2026
+                </span>
+              </div>
+              <span className="text-[9px] sm:text-[10px] text-cyan-400 tracking-widest mt-1">
+                GOA, INDIA &bull; OFFICIAL BUILDER GRAPHIC GENERATOR
+              </span>
+            </div>
           </div>
 
-          {/* Form and Configuration Box */}
-          <div className="glass-card rounded-3xl p-6 sm:p-8">
-            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
+          {/* Right Controls */}
+          <div className="flex items-center gap-4">
+            {/* Audio Toggle */}
+            <button
+              type="button"
+              onClick={() => setSoundOn(!soundOn)}
+              className="p-2.5 rounded border border-[#00F2FE]/20 bg-cyan-950/20 text-[#00F2FE] hover:bg-cyan-950/40"
+            >
+              {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </button>
+
+            {/* Custom Tab Selector */}
+            <div className="flex rounded-lg border border-[#00F2FE]/20 bg-black/40 p-1">
+              <button
+                type="button"
+                onClick={() => { if(soundOn) playClickSound(); setActiveTab('frame'); }}
+                className={`flex items-center gap-1.5 rounded-md py-2 px-4 text-xs font-black transition-all ${
+                  activeTab === 'frame'
+                    ? 'bg-[#FDE047] text-black shadow-md font-bold'
+                    : 'text-[#00F2FE] hover:bg-[#00F2FE]/5'
+                }`}
+              >
+                PFP Frame
+              </button>
               
-              {/* Photo Upload Section */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-extrabold text-slate-300 tracking-wide">
-                  UPLOAD PHOTO <span className="text-brand-orange">*</span>
-                </label>
-                
-                {!file ? (
-                  <div
-                    {...getRootProps()}
-                    className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center cursor-pointer transition-all duration-300 ${
-                      isDragActive 
-                        ? 'border-brand-purple bg-brand-purple/5' 
-                        : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/20'
-                    }`}
-                  >
-                    <input {...getInputProps()} />
-                    <Upload className="h-10 w-10 text-slate-400 mx-auto mb-4 animate-bounce" />
-                    <p className="text-sm sm:text-base font-bold text-white">
-                      Drag & drop your profile photo
-                    </p>
-                    <p className="text-xs text-slate-500 mt-2">
-                      Supports JPG, PNG, WEBP, and HEIC/HEIF (max 10MB)
-                    </p>
-                  </div>
-                ) : (
-                  <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="relative h-16 w-16 flex-shrink-0 rounded-xl overflow-hidden bg-brand-dark border border-white/10 flex items-center justify-center">
-                        {isHeic ? (
-                          <Camera className="h-6 w-6 text-brand-orange" />
-                        ) : (
-                          <img src={previewUrl} alt="Preview" className="h-full w-full object-cover" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-white truncate">{file.name}</p>
-                        <p className="text-xs text-slate-500">
-                          {(file.size / (1024 * 1024)).toFixed(2)} MB &bull; {isHeic ? 'iPhone HEIC Format (Auto-conversion enabled)' : 'Ready'}
-                        </p>
-                      </div>
-                    </div>
+              <button
+                type="button"
+                onClick={() => { if(soundOn) playClickSound(); setActiveTab('card'); }}
+                className={`flex items-center gap-1.5 rounded-md py-2 px-4 text-xs font-black transition-all ${
+                  activeTab === 'card'
+                    ? 'bg-[#FDE047] text-black shadow-md font-bold'
+                    : 'text-[#00F2FE] hover:bg-[#00F2FE]/5'
+                }`}
+              >
+                <Award className="h-3.5 w-3.5" />
+                Builder ID Card
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= WORKSPACE GRID ================= */}
+        <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* LEFT WORKSPACE PANELS (7 cols) */}
+          <div className="lg:col-span-7 flex flex-col gap-6">
+            
+            {/* PANEL 1: EDIT PROFILE / FORM FIELDS */}
+            <div className="border border-[#00F2FE]/20 bg-[#0F1322] rounded-xl p-5 flex flex-col gap-5 relative">
+              <h2 className="text-xs sm:text-sm font-black text-white flex items-center gap-2 pb-2 border-b border-[#00F2FE]/10 uppercase">
+                <Sparkles className="h-4 w-4 text-[#FDE047]" />
+                EDIT PROFILE
+              </h2>
+
+              {/* Your photo Upload zone */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-black text-slate-400 tracking-wider">YOUR PHOTO</span>
+                <div
+                  {...getRootProps()}
+                  className={`border border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+                    isDragActive 
+                      ? 'border-[#00F2FE] bg-[#00F2FE]/5' 
+                      : 'border-white/10 bg-black/20 hover:bg-black/35 hover:border-white/20'
+                  }`}
+                >
+                  <input {...getInputProps()} />
+                  <Upload className="h-6 w-6 text-[#00F2FE] mx-auto mb-2" />
+                  <p className="text-xs font-extrabold text-white uppercase">
+                    Tap to upload or drag a photo here
+                  </p>
+                  <p className="text-[9px] text-slate-500 mt-1 uppercase">
+                    JPG, PNG, or HEIC - any crop or ratio works
+                  </p>
+                </div>
+
+                {/* Clear Photo Action Button */}
+                {file && (
+                  <div className="mt-2.5 flex justify-end">
                     <button
                       type="button"
-                      onClick={clearFile}
-                      disabled={isGenerating}
-                      className="rounded-xl border border-white/10 px-3.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-colors"
+                      onClick={() => { if(soundOn) playClickSound(); setFile(null); setPreviewUrl(''); }}
+                      className="text-[9px] font-extrabold text-red-400 uppercase tracking-widest bg-red-950/10 border border-red-500/25 px-2.5 py-1 rounded hover:bg-red-950/20"
                     >
-                      Remove
+                      Clear photo
                     </button>
                   </div>
                 )}
               </div>
 
-              {/* Text Fields for Card (Only shown if card tab active) */}
-              <AnimatePresence mode="wait">
-                {activeTab === 'card' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="flex flex-col gap-5 overflow-hidden"
-                  >
-                    {/* Name Input */}
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="name" className="text-sm font-extrabold text-slate-300 tracking-wide flex items-center gap-1.5">
-                        <User className="h-4 w-4 text-brand-purple" />
-                        FULL NAME <span className="text-brand-orange">*</span>
-                      </label>
-                      <input
-                        id="name"
-                        type="text"
-                        placeholder="E.g., Dev Hacker"
-                        {...register('name', { 
-                          required: 'Full name is required for badge card generation.',
-                          maxLength: { value: 24, message: 'Name must not exceed 24 characters.' }
-                        })}
-                        className={`rounded-xl border bg-brand-dark px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-purple ${
-                          errors.name ? 'border-red-500/50 focus:ring-red-500' : 'border-white/10'
-                        }`}
-                      />
-                      {errors.name && <span className="text-xs text-red-400 font-medium">{errors.name.message}</span>}
-                    </div>
-
-                    {/* Role Input */}
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="role" className="text-sm font-extrabold text-slate-300 tracking-wide flex items-center gap-1.5">
-                        <Briefcase className="h-4 w-4 text-brand-blue" />
-                        ROLE <span className="text-brand-orange">*</span>
-                      </label>
-                      <input
-                        id="role"
-                        type="text"
-                        placeholder="E.g., Full Stack Engineer"
-                        {...register('role', { 
-                          required: 'Role is required for badge card generation.',
-                          maxLength: { value: 30, message: 'Role must not exceed 30 characters.' }
-                        })}
-                        className={`rounded-xl border bg-brand-dark px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-purple ${
-                          errors.role ? 'border-red-500/50 focus:ring-red-500' : 'border-white/10'
-                        }`}
-                      />
-                      {errors.role && <span className="text-xs text-red-400 font-medium">{errors.role.message}</span>}
-                    </div>
-
-                    {/* Tech Stack Input */}
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="stack" className="text-sm font-extrabold text-slate-300 tracking-wide flex items-center gap-1.5">
-                        <Cpu className="h-4 w-4 text-brand-orange" />
-                        TECH STACK <span className="text-brand-orange">*</span>
-                      </label>
-                      <input
-                        id="stack"
-                        type="text"
-                        placeholder="E.g., React, Node, Tailwind, Mongo"
-                        {...register('stack', { 
-                          required: 'Tech stack is required.',
-                          maxLength: { value: 45, message: 'Stack list must not exceed 45 characters.' }
-                        })}
-                        className={`rounded-xl border bg-brand-dark px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-purple ${
-                          errors.stack ? 'border-red-500/50 focus:ring-red-500' : 'border-white/10'
-                        }`}
-                      />
-                      {errors.stack && <span className="text-xs text-red-400 font-medium">{errors.stack.message}</span>}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Toggles (Nice Extras!) */}
-              <div className="border-t border-white/5 pt-5 flex flex-col gap-4">
+              {/* Name input */}
+              <div className="flex flex-col gap-1.5 mt-2">
+                <label htmlFor="name" className="text-[10px] font-black text-slate-400 tracking-wider">
+                  NAME
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  placeholder="e.g. Dev Patel"
+                  {...register('name', { 
+                    required: 'Name is required.'
+                  })}
+                  className={`rounded bg-black border px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#00F2FE] ${
+                    errors.name ? 'border-red-500/50' : 'border-white/10'
+                  }`}
+                />
+                {errors.name && <span className="text-[10px] text-red-400">{errors.name.message}</span>}
                 
-                {/* Auto Color Enhancement Toggle */}
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-white flex items-center gap-1.5">
-                      <Sparkles className="h-4 w-4 text-brand-yellow fill-brand-yellow/20" />
-                      Auto Color Enhancement
-                    </span>
-                    <span className="text-xs text-slate-500">Corrects brightness, saturation, and exposure automatically</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEnhanceColors(!enhanceColors)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      enhanceColors ? 'bg-brand-purple' : 'bg-white/15'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        enhanceColors ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
+                {/* Fixed role label */}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="bg-[#1e293b] text-slate-300 text-[10px] font-black px-3 py-1 rounded border border-white/5">
+                    Builder @ HH Goa 2026
+                  </span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">
+                    fixed on every card
+                  </span>
                 </div>
-
-                {/* AI Background Removal Toggle */}
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-white flex items-center gap-1.5">
-                      <RefreshCw className="h-4 w-4 text-brand-orange" />
-                      Client-Side Background Removal (Preview)
-                    </span>
-                    <span className="text-xs text-slate-500">Simulates cutout effect inside the live preview box</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRemoveBg(!removeBg)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                      removeBg ? 'bg-brand-orange' : 'bg-white/15'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        removeBg ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
               </div>
 
-              {/* Submit Buttons */}
-              <div className="border-t border-white/5 pt-5">
-                <button
-                  type="submit"
-                  disabled={isGenerating}
-                  className="w-full relative flex items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-brand-purple via-brand-blue to-brand-orange py-4 text-base font-extrabold text-white shadow-xl shadow-brand-purple/20 hover:opacity-95 active:scale-98 transition-all duration-200 disabled:opacity-50 disabled:pointer-events-none"
-                >
-                  {isGenerating ? 'Processing...' : activeTab === 'frame' ? 'Generate Profile Frame' : 'Generate Builder Card'}
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-
-        {/* Right Side: Real-time Live Preview (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col gap-6 sticky top-24">
-          <h3 className="text-sm font-extrabold text-slate-300 tracking-wide">
-            LIVE PREVIEW (REAL-TIME)
-          </h3>
-
-          <div className="glass-card rounded-3xl p-5 relative overflow-hidden flex items-center justify-center aspect-square md:aspect-[4/5] lg:aspect-auto min-h-[400px]">
-            
-            {/* Live mockup render depending on tab selection */}
-            {activeTab === 'frame' ? (
-              // Profile Frame Mockup
-              <div className="relative w-72 h-72 rounded-full overflow-hidden flex items-center justify-center border-4 border-dashed border-white/10 bg-brand-dark">
-                {file && previewUrl ? (
-                  <img 
-                    src={previewUrl} 
-                    alt="Selfie" 
-                    className={`h-full w-full object-cover transition-all duration-300 ${
-                      removeBg ? 'brightness-110 saturate-[1.05] contrast-105 filter hue-rotate-15' : ''
-                    } ${enhanceColors ? 'brightness-105 saturate-[1.1]' : ''}`}
+              {/* Skills input */}
+              {activeTab === 'card' && (
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <label htmlFor="stack" className="text-[10px] font-black text-slate-400 tracking-wider">
+                    TOP 6 SKILLS (COMMA SEPARATED - SHOWN AS ICONS)
+                  </label>
+                  <input
+                    id="stack"
+                    type="text"
+                    placeholder="React, Node.js, Python, MongoDB, Docker, Figma"
+                    {...register('stack', { 
+                      required: 'Skills list is required.'
+                    })}
+                    className={`rounded bg-black border px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#00F2FE] ${
+                      errors.stack ? 'border-red-500/50' : 'border-white/10'
+                    }`}
                   />
-                ) : (
-                  <div className="text-center p-4 flex flex-col items-center">
-                    <Camera className="h-10 w-10 text-slate-600 mb-2" />
-                    <span className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Circular Crop Area</span>
-                  </div>
-                )}
-                
-                {/* SVG Overlay representing the frame */}
-                <div className="absolute inset-0 pointer-events-none w-full h-full">
-                  <svg width="100%" height="100%" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-                    <defs>
-                      <linearGradient id="liveBeach" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stop-color="#8B5CF6" />
-                        <stop offset="35%" stop-color="#3B82F6" />
-                        <stop offset="70%" stop-color="#F97316" />
-                        <stop offset="100%" stop-color="#EAB308" />
-                      </linearGradient>
-                    </defs>
-                    {/* Glowing ring */}
-                    <circle cx="540" cy="540" r="515" stroke="url(#liveBeach)" stroke-width="36" fill="none" />
-                    {/* Palm Leaves */}
-                    <path d="M120,400 Q80,500 130,600 Q180,500 120,400 Z" fill="url(#liveBeach)" opacity="0.8" />
-                    <path d="M960,400 Q1000,500 950,600 Q900,500 960,400 Z" fill="url(#liveBeach)" opacity="0.8" />
-                    {/* Wave bottom lines */}
-                    <path d="M160,780 Q320,830 540,780 T920,780 L920,850 L160,850 Z" fill="url(#liveBeach)" opacity="0.2" />
-                    {/* Banner */}
-                    <rect x="340" y="910" width="400" height="76" rx="38" fill="#0A0F1D" fill-opacity="0.9" stroke="url(#liveBeach)" stroke-width="5" />
-                    <text x="540" y="958" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="30" font-weight="900" letter-spacing="6" text-anchor="middle">HH GOA 2026</text>
-                    {/* Top Tag */}
-                    <rect x="440" y="66" width="200" height="42" rx="21" fill="#0A0F1D" fill-opacity="0.9" stroke="url(#liveBeach)" stroke-width="3" />
-                    <text x="540" y="92" fill="#EAB308" font-family="system-ui, sans-serif" font-size="16" font-weight="800" letter-spacing="3" text-anchor="middle">BUILDER</text>
-                  </svg>
+                  {errors.stack && <span className="text-[10px] text-red-400">{errors.stack.message}</span>}
                 </div>
-              </div>
-            ) : (
-              // Builder Badge Card Mockup (w-72, aspect-ratio matching 4:5)
-              <div className="relative w-72 h-[360px] rounded-3xl overflow-hidden bg-brand-dark border border-white/10 flex flex-col justify-between p-4 shadow-xl">
-                {/* Beach Glowing Background orbs */}
-                <div className="absolute inset-0 bg-[#0C0F1D] z-0" />
-                <div className="absolute top-10 left-4 h-32 w-32 rounded-full bg-brand-purple/15 blur-2xl z-0" />
-                <div className="absolute bottom-10 right-4 h-32 w-32 rounded-full bg-brand-orange/10 blur-2xl z-0" />
-                <div className="absolute inset-0 border border-white/5 rounded-3xl z-0" />
+              )}
 
-                {/* Header branding */}
-                <div className="flex justify-between items-center z-10 border-b border-white/5 pb-2">
-                  <span className="text-[10px] font-black text-white tracking-widest">HH GOA 2026</span>
-                  <span className="text-[8px] font-bold text-brand-orange bg-brand-orange/10 px-2 py-0.5 rounded-full border border-brand-orange/20 tracking-wider">BUILDER</span>
-                </div>
-
-                {/* Photo space */}
-                <div className="my-auto mx-auto h-32 w-32 rounded-2xl overflow-hidden border-2 border-brand-purple relative z-10 flex items-center justify-center bg-slate-900 shadow-md">
-                  {file && previewUrl ? (
-                    <img 
-                      src={previewUrl} 
-                      alt="Selfie" 
-                      className={`h-full w-full object-cover transition-all duration-300 ${
-                        removeBg ? 'brightness-110 saturate-[1.05]' : ''
-                      } ${enhanceColors ? 'brightness-105 saturate-[1.1]' : ''}`}
+              {/* Builder Title input with randomize button */}
+              {activeTab === 'card' && (
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <label htmlFor="builderTitle" className="text-[10px] font-black text-slate-400 tracking-wider">
+                    BUILDER TITLE
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="builderTitle"
+                      type="text"
+                      placeholder="e.g. merge conflictor"
+                      {...register('builderTitle', { 
+                        required: 'Title is required.',
+                        maxLength: { value: 25, message: 'Title must not exceed 25 characters.' }
+                      })}
+                      className={`flex-grow rounded bg-black border px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-[#00F2FE] ${
+                        errors.builderTitle ? 'border-red-500/50' : 'border-white/10'
+                      }`}
                     />
-                  ) : (
-                    <Camera className="h-8 w-8 text-slate-700" />
-                  )}
-                </div>
-
-                {/* User Info (Live feedback) */}
-                <div className="text-center z-10 flex flex-col gap-0.5 mt-2">
-                  <h4 className="text-base font-extrabold text-white leading-tight truncate">
-                    {/* Live update of name */}
-                    {errors.name ? 'Invalid Name' : 'YOUR NAME'}
-                  </h4>
-                  <p className="text-[10px] text-slate-400 font-semibold truncate">ROLE / TITLE</p>
-                  <p className="text-[8px] text-slate-500 font-medium truncate mt-0.5">REACT, NODE, TAILWIND</p>
-                </div>
-
-                {/* Footer details + QR representation */}
-                <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3 z-10 text-[8px] text-slate-500 font-mono">
-                  <div className="text-left leading-relaxed">
-                    <div>SYS: HH-GOA-2026</div>
-                    <div>STATUS: <span className="text-emerald-500 font-bold">VERIFIED</span></div>
+                    
+                    <button
+                      type="button"
+                      onClick={handleRandomizeTitle}
+                      className="bg-[#FDE047] text-black border border-black hover:opacity-90 active:scale-95 px-3.5 rounded flex items-center justify-center cursor-pointer shadow-[2px_2px_0px_0px_#000]"
+                      title="Randomize title"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </button>
                   </div>
-                  <div className="h-10 w-10 rounded border border-white/10 bg-slate-900 p-0.5 flex items-center justify-center">
-                    {/* QR Placeholder */}
-                    <div className="grid grid-cols-3 gap-0.5 w-full h-full opacity-60">
-                      {[...Array(9)].map((_, i) => (
-                        <div key={i} className={`bg-white rounded-[1px] ${i % 3 === 0 || i % 4 === 0 ? 'opacity-100' : 'opacity-25'}`} />
-                      ))}
-                    </div>
+                  {errors.builderTitle && <span className="text-[10px] text-red-400">{errors.builderTitle.message}</span>}
+                </div>
+              )}
+            </div>
+
+            {/* PANEL 2: OVERLAYS (For PFP Frame) */}
+            {activeTab === 'frame' && (
+              <div className="border border-[#00F2FE]/20 bg-[#0F1322] rounded-xl p-5 flex flex-col gap-5">
+                <div>
+                  <h3 className="text-[10px] font-black text-slate-400 tracking-widest mb-3 uppercase">
+                    SELECT PFP STYLE OVERLAY
+                  </h3>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {[
+                      { id: 'emerald', label: '2:47 PM EMERALD', dot: 'bg-emerald-500' },
+                      { id: 'sunset', label: 'NEON SUNSET', dot: 'bg-pink-500' },
+                      { id: 'cyber', label: 'HACKER CYBER', dot: 'bg-cyan-500' },
+                      { id: 'coastal', label: 'COASTAL WAVE', dot: 'bg-blue-400' },
+                      { id: 'retro', label: 'RETRO SYNTH', dot: 'bg-purple-500' },
+                      { id: 'gold', label: 'GOLD BUILDER', dot: 'bg-amber-500' }
+                    ].map((style) => (
+                      <button
+                        key={style.id}
+                        type="button"
+                        onClick={() => { if(soundOn) playClickSound(); setSelectedStyle(style.id); }}
+                        className={`flex flex-col items-center justify-center p-3 rounded-lg border text-[10px] font-black tracking-wide leading-none transition-all gap-2 ${
+                          selectedStyle === style.id
+                            ? 'bg-[#FDE047] text-black border-black shadow-md scale-102'
+                            : 'border-white/10 text-slate-300 bg-black/25 hover:bg-black/35 hover:border-white/25'
+                        }`}
+                      >
+                        <span className={`h-2 w-2 rounded-full ${style.dot}`} />
+                        {style.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
             )}
-            
-          </div>
-        </div>
 
+            {/* PANEL 3: POSITION ADJUSTMENTS SLIDERS */}
+            <div className="border border-[#00F2FE]/20 bg-[#0F1322] rounded-xl p-5 flex flex-col gap-5">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xs sm:text-sm font-black flex items-center gap-2 uppercase">
+                  <span className="bg-[#00F2FE]/10 text-[#00F2FE] px-2 py-0.5 rounded">⚙️</span>
+                  PHOTO POSITION, ZOOM & FINE-TUNING
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleResetPhoto}
+                  className="text-[10px] font-bold text-slate-500 hover:text-white transition-colors"
+                >
+                  Reset Photo
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                {/* Zoom Scale */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                    <span>Zoom Scale</span>
+                    <span>{zoom.toFixed(2)}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="3.0"
+                    step="0.05"
+                    value={zoom}
+                    onChange={(e) => setZoom(parseFloat(e.target.value))}
+                    className="w-full h-1 bg-black rounded-lg appearance-none cursor-pointer accent-[#FDE047]"
+                  />
+                </div>
+
+                {/* Pan X and Pan Y */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Pan X */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                      <span>Pan X</span>
+                      <span>{panX}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-180"
+                      max="180"
+                      step="2"
+                      value={panX}
+                      onChange={(e) => setPanX(parseInt(e.target.value))}
+                      className="w-full h-1 bg-black rounded-lg appearance-none cursor-pointer accent-[#FDE047]"
+                    />
+                  </div>
+
+                  {/* Pan Y */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                      <span>Pan Y</span>
+                      <span>{panY}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-180"
+                      max="180"
+                      step="2"
+                      value={panY}
+                      onChange={(e) => setPanY(parseInt(e.target.value))}
+                      className="w-full h-1 bg-black rounded-lg appearance-none cursor-pointer accent-[#FDE047]"
+                    />
+                  </div>
+                </div>
+
+                {/* Brightness */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400">
+                    <span>Brightness</span>
+                    <span>{brightness}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="50"
+                    max="150"
+                    value={brightness}
+                    onChange={(e) => setBrightness(parseInt(e.target.value))}
+                    className="w-full h-1 bg-black rounded-lg appearance-none cursor-pointer accent-[#FDE047]"
+                  />
+                </div>
+
+                {/* Filters */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 tracking-wider">
+                    COLOR FILTER PRESET
+                  </span>
+                  <select
+                    value={colorFilter}
+                    onChange={(e) => { if(soundOn) playClickSound(); setColorFilter(e.target.value); }}
+                    className="rounded bg-black border border-white/10 px-3 py-2 text-xs text-[#00F2FE] focus:outline-none focus:border-[#00F2FE]/50"
+                  >
+                    <option value="normal">Normal (No Filter)</option>
+                    <option value="grayscale">Grayscale</option>
+                    <option value="sepia">Sepia Retro</option>
+                    <option value="cool">Cool Matrix</option>
+                    <option value="warm">Warm Sunset</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* RIGHT PREVIEW COLUMN (5 cols) */}
+          <div className="lg:col-span-5 flex flex-col gap-6 sticky top-24">
+            
+            {/* Preview Box Container */}
+            <div className="border border-[#00F2FE]/20 bg-[#0F1322] rounded-xl p-5 flex flex-col gap-5">
+              
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <span className="text-xs font-black tracking-wide flex items-center gap-1.5 text-white">
+                  <Eye className="h-4 w-4 text-[#00F2FE]" />
+                  LIVE GRAPHIC PREVIEW
+                </span>
+                
+                <div className="flex items-center gap-1 rounded bg-[#00F2FE]/10 border border-[#00F2FE]/25 px-2 py-0.5 text-[8px] font-black text-[#00F2FE] tracking-widest uppercase">
+                  <Maximize2 className="h-2 w-2" />
+                  {activeTab === 'frame' ? '1080 x 1080 PX HD' : '1080 x 1350 PX HD'}
+                </div>
+              </div>
+
+              {/* Centered Graphic Container */}
+              <div className="flex items-center justify-center p-3 bg-black/40 rounded-xl min-h-[300px]">
+                
+                {/* RENDER FOR tab: 'frame' */}
+                {activeTab === 'frame' ? (
+                  <div 
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    className={`relative h-64 w-64 rounded-full overflow-hidden flex items-center justify-center border-4 border-dashed border-white/10 transition-all duration-300 cursor-move select-none ${
+                      hasPhoto ? 'bg-transparent' : 'bg-slate-900'
+                    }`}
+                  >
+                    
+                    {/* User Photo */}
+                    {hasPhoto ? (
+                      <img 
+                        src={previewUrl} 
+                        alt="Preview" 
+                        style={previewImageStyle}
+                        draggable="false"
+                        className="h-full w-full object-contain pointer-events-none" 
+                      />
+                    ) : (
+                      <div className="text-center p-4 flex flex-col items-center">
+                        <Camera className="h-8 w-8 text-slate-700 mb-2" />
+                        <span className="text-[7px] text-slate-500 font-extrabold tracking-widest uppercase">Circular Crop</span>
+                      </div>
+                    )}
+                    
+                    {/* PFP SVG Overlay */}
+                    <div className="absolute inset-0 pointer-events-none w-full h-full">
+                      <svg width="100%" height="100%" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+                        <defs>
+                          <linearGradient id="pfpLiveGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color={themeColors[selectedStyle].gradients[0]} />
+                            <stop offset="35%" stop-color={themeColors[selectedStyle].gradients[1]} />
+                            <stop offset="70%" stop-color={themeColors[selectedStyle].gradients[2]} />
+                            <stop offset="100%" stop-color={themeColors[selectedStyle].gradients[3]} />
+                          </linearGradient>
+                        </defs>
+                        <circle cx="540" cy="540" r="515" stroke="url(#pfpLiveGrad)" stroke-width="36" fill="none" />
+                        <path d="M120,400 Q80,500 130,600 Q180,500 120,400 Z" fill="url(#pfpLiveGrad)" opacity="0.8" />
+                        <path d="M960,400 Q1000,500 950,600 Q900,500 960,400 Z" fill="url(#pfpLiveGrad)" opacity="0.8" />
+                        <path d="M160,780 Q320,830 540,780 T920,780 L920,850 L160,850 Z" fill="url(#pfpLiveGrad)" opacity="0.2" />
+                        <rect x="340" y="910" width="400" height="76" rx="38" fill="#0A0F1D" fill-opacity="0.9" stroke="url(#pfpLiveGrad)" stroke-width="5" />
+                        <text x="540" y="958" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="30" font-weight="900" letter-spacing="6" text-anchor="middle">HH GOA 2026</text>
+                        <rect x="440" y="66" width="200" height="42" rx="21" fill="#0A0F1D" fill-opacity="0.9" stroke="url(#pfpLiveGrad)" stroke-width="3" />
+                        <text x="540" y="92" fill="#EAB308" font-family="system-ui, sans-serif" font-size="16" font-weight="800" letter-spacing="3" text-anchor="middle">BUILDER</text>
+                      </svg>
+                    </div>
+                  </div>
+                ) : (
+                  // RENDER FOR tab: 'card' (STRICTLY matches first image layout: RECTANGULAR PHOTO & NO QR)
+                  <div className="relative w-72 h-[360px] rounded-[24px] bg-[#F3F4F0] text-black shadow-2xl relative p-4 flex flex-col justify-between select-none overflow-hidden border-[6px] border-[#006B3F] z-10">
+                    
+                    {/* Inner black border line */}
+                    <div className="absolute inset-[2px] border border-black rounded-[18px] pointer-events-none z-15" />
+                    
+                    {/* Lanyard punch hole at top */}
+                    <div className="absolute top-[8px] left-1/2 -translate-x-1/2 w-10 h-2.5 bg-[#1E293B] border border-black rounded-full z-20" />
+
+                    {/* Speech Bubble Logo (गोवा certified - Matches first image) */}
+                    <div className="flex flex-col items-center mt-3.5 z-10">
+                      <div className="bg-[#FDE047] border-2 border-black rounded-lg px-2.5 py-0.5 text-xs font-black tracking-wide leading-tight shadow-[2px_2px_0px_0px_#000]">
+                        गोवा
+                      </div>
+                      <span className="text-[8px] font-extrabold text-black tracking-widest mt-0.5 uppercase">certified</span>
+                    </div>
+
+                    {/* Title (lowercase text with dot - Matches first image) */}
+                    <div className="text-center mt-1 z-10">
+                      <h3 className="text-sm font-black tracking-tight leading-none text-black truncate uppercase">
+                        {watchedTitle}.
+                      </h3>
+                    </div>
+
+                    {/* Highlighted Name & Role section */}
+                    <div className="flex flex-col items-center z-10 mt-1">
+                      <div className="bg-[#FDE047] border-[1.5px] border-black rounded-md px-4 py-0.5 shadow-[1.5px_1.5px_0px_0px_#000] max-w-[210px] truncate">
+                        <span className="text-xs font-black uppercase text-black">
+                          {watchedName}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-extrabold text-slate-700 mt-1 leading-none uppercase truncate max-w-[210px]">
+                        Builder @ HH Goa 2026
+                      </span>
+                    </div>
+
+                    {/* Middle Panel: Left vertical skills column & Right photo card box */}
+                    <div className="flex gap-2 items-center my-auto z-10 px-1 mt-1 flex-grow">
+                      
+                      {/* Left Column Skills Badges (Spaced vertically, displays all 6 capsules) */}
+                      <div className="flex flex-col gap-1 justify-center w-8 items-center">
+                        {watchedStack.split(',').map((skill, index) => {
+                          if (index >= 6) return null;
+                          const cleanSkill = skill.trim().toUpperCase() || 'SK';
+                          
+                          let fill = 'bg-white';
+                          let textColor = 'text-black';
+                          
+                          if (index === 0) { fill = 'bg-[#FDE047]'; }
+                          else if (index === 1) { fill = 'bg-[#006B3F]'; textColor = 'text-white'; }
+                          else if (index === 2) { fill = 'bg-[#3B82F6]'; textColor = 'text-white'; }
+                          else if (index === 3) { fill = 'bg-[#EC4899]'; textColor = 'text-white'; }
+                          else if (index === 4) { fill = 'bg-[#10B981]'; textColor = 'text-white'; }
+                          else if (index === 5) { fill = 'bg-[#8B5CF6]'; textColor = 'text-white'; }
+                          
+                          return (
+                            <div 
+                              key={index} 
+                              className={`min-w-[18px] h-4.5 px-1.5 rounded-full border border-black flex items-center justify-center text-[5px] font-black shadow-[0.5px_0.5px_0px_0px_#000] whitespace-nowrap ${fill} ${textColor}`}
+                            >
+                              {cleanSkill}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Right Photo Box Container (Rounded rectangle crop, CONTAIN-FIT, DRAGGABLE) */}
+                      <div 
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        className={`flex-grow h-[180px] rounded-2xl border-2 border-black relative flex items-center justify-center overflow-hidden shadow-[2px_2px_0px_0px_#000] cursor-move select-none transition-colors ${
+                          hasPhoto ? 'bg-transparent' : 'bg-slate-900'
+                        }`}
+                      >
+                        {hasPhoto ? (
+                          <img 
+                            src={previewUrl} 
+                            alt="Selfie" 
+                            style={previewImageStyle}
+                            draggable="false"
+                            className="h-full w-full object-contain pointer-events-none" 
+                          />
+                        ) : (
+                          // Default Silhouette preview
+                          <div className="flex flex-col items-center justify-center w-full h-full relative opacity-60">
+                            <div className="h-12 w-12 rounded-full bg-black/10 flex items-center justify-center">
+                              <User className="h-7 w-7 text-black/30" />
+                            </div>
+                            <span className="text-[5px] font-black text-amber-950 tracking-wider uppercase mt-1">upload photo</span>
+                          </div>
+                        )}
+                        
+                        {/* Pink Sparkle Star Decoration */}
+                        <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 0L14 8L22 10L14 12L12 20L10 12L2 10L10 8Z" fill="#F43F5E" stroke="#000" strokeWidth="2.5" />
+                          </svg>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Footer Section */}
+                    <div className="flex justify-between items-end border-t border-black/10 pt-1.5 z-10 text-[7px] text-slate-700 font-mono mt-1">
+                      <div className="flex flex-col leading-none font-bold">
+                        <span className="text-[#006B3F] text-[8px]">#FrameInGoa</span>
+                        <span className="text-slate-400 text-[6px] mt-0.5">hh-goa-2026</span>
+                      </div>
+                      
+                      <div className="text-right leading-tight font-black italic text-slate-700 font-sans scale-90 origin-bottom-right">
+                        <div>Ideas shipped,</div>
+                        <div>sleep skipped,</div>
+                        <div className="text-[#006B3F]">Goa lived.</div>
+                      </div>
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
+
+              {/* ACTION BUTTONS */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-white/5">
+                <button
+                  type="submit"
+                  disabled={isGenerating}
+                  className="flex-1 rounded-lg bg-[#FDE047] text-black font-black hover:opacity-90 active:scale-98 py-3.5 text-xs sm:text-sm shadow-[3px_3px_0px_0px_#000] border-2 border-black flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download className="h-4 w-4" />
+                  {isGenerating ? 'GENERATING...' : 'Download card'}
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (soundOn) playClickSound();
+                    toast.error('Download your card first to enable sharing on X.');
+                  }}
+                  className="flex-1 rounded-lg bg-[#EC4899] text-white font-black hover:opacity-90 active:scale-98 py-3.5 text-xs sm:text-sm shadow-[3px_3px_0px_0px_#000] border-2 border-black flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Twitter className="h-4 w-4" />
+                  Share to X
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+        </form>
       </div>
 
-      {/* Loading Modal Overlay during generation */}
+      {/* RENDER LOADER MODAL */}
       <AnimatePresence>
         {isGenerating && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-card rounded-3xl p-8 max-w-md w-full border border-white/10 text-center relative overflow-hidden"
-            >
-              {/* Animated loading ring */}
-              <div className="relative h-20 w-20 mx-auto mb-6">
-                <div className="absolute inset-0 rounded-full border-4 border-white/5" />
-                <div className="absolute inset-0 rounded-full border-4 border-t-brand-purple border-r-brand-orange animate-spin" />
-                <Sparkles className="absolute inset-0 m-auto h-7 w-7 text-brand-yellow animate-pulse" />
-              </div>
-
-              <h3 className="text-xl font-bold text-white mb-2">Generating Your Badge</h3>
+            <div className="border border-[#00F2FE]/25 bg-[#0F1322] rounded-2xl p-8 max-w-md w-full text-center relative overflow-hidden shadow-2xl">
+              <div className="absolute top-0 left-0 w-2.5 h-2.5 border-t-2 border-l-2 border-[#00F2FE]" />
+              <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t-2 border-r-2 border-[#00F2FE]" />
               
-              {/* Dynamic steps ticker */}
-              <p className="text-sm text-slate-400 font-medium h-6 mb-6">
-                {stepsList[generationStep]}
+              <div className="h-14 w-14 rounded-full border border-dashed border-[#00F2FE] border-t-transparent animate-spin mx-auto mb-6" />
+              
+              <h3 className="text-sm font-black text-white uppercase tracking-wider mb-2">
+                HACKER PIPELINE RENDERING
+              </h3>
+              
+              <p className="text-[10px] text-slate-400 font-bold uppercase h-5 tracking-widest mb-6">
+                {generationSteps[generationStep]}
               </p>
 
               {/* Progress bar */}
-              <div className="relative w-full h-2 rounded-full bg-white/5 overflow-hidden mb-2">
+              <div className="w-full h-1 bg-[#00F2FE]/10 rounded-full overflow-hidden mb-2">
                 <div 
-                  className="h-full bg-gradient-to-r from-brand-purple to-brand-orange rounded-full transition-all duration-300"
+                  className="h-full bg-gradient-to-r from-[#FDE047] to-[#EC4899] transition-all duration-300"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-              <div className="flex justify-between items-center text-xs font-semibold text-slate-500">
-                <span>Upload Progress</span>
+              
+              <div className="flex justify-between text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                <span>Upload progress</span>
                 <span>{uploadProgress}%</span>
               </div>
-            </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

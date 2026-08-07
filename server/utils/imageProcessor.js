@@ -19,8 +19,6 @@ export function escapeXml(unsafe) {
 
 /**
  * Converts HEIC/HEIF buffer to PNG buffer
- * @param {Buffer} buffer 
- * @returns {Promise<Buffer>}
  */
 export async function convertHeicToPng(buffer) {
   try {
@@ -35,26 +33,97 @@ export async function convertHeicToPng(buffer) {
 }
 
 /**
- * Process Format A: Profile Picture Frame (1080x1080)
- * @param {Buffer} photoBuffer - Raw user photo buffer (must be PNG/JPG)
- * @param {boolean} enhance - Enhance brightness & saturation toggle
- * @returns {Promise<Buffer>} Generated image PNG buffer
+ * Process raw photo - scales the image so that it fits ENTIRELY (contain fit) inside the box
+ * when zoom = 1.0, and then centers and translates it based on pan values.
  */
-export async function generateProfileFrame(photoBuffer, enhance = false) {
-  // 1. Prepare user image with optional enhancement
-  let userSharp = sharp(photoBuffer);
+async function processUserPhoto(photoBuffer, params, targetWidth = 360, targetHeight = 360, isFrame = false) {
+  const { zoom = 1.0, panX = 0, panY = 0, brightness = 100, filter = 'normal' } = params;
   
-  if (enhance) {
-    userSharp = userSharp.modulate({
-      brightness: 1.08,
-      saturation: 1.15
+  // 1. Initialize Sharp instance
+  let img = sharp(photoBuffer);
+  
+  // 2. Apply Brightness Correction
+  if (brightness !== 100) {
+    img = img.modulate({
+      brightness: brightness / 100
     });
   }
   
-  // Resize to 1080x1080 cover
-  const resizedUser = await userSharp
-    .resize(1080, 1080, { fit: 'cover', position: 'center' })
+  // 3. Apply Color Filter Presets
+  const f = filter.toLowerCase();
+  if (f === 'grayscale') {
+    img = img.greyscale();
+  } else if (f === 'sepia') {
+    img = img.recolor([
+      [0.393, 0.769, 0.189],
+      [0.349, 0.686, 0.168],
+      [0.272, 0.534, 0.131]
+    ]);
+  } else if (f === 'cool') {
+    img = img.modulate({ saturation: 1.1 }).tint({ r: 25, g: 50, b: 90 });
+  } else if (f === 'warm') {
+    img = img.modulate({ saturation: 1.1 }).tint({ r: 90, g: 45, b: 20 });
+  }
+
+  // 4. Calculate dimensions so that the ENTIRE image fits inside the target box (aspect ratio preserved)
+  const metadata = await img.metadata();
+  const originalWidth = metadata.width || 500;
+  const originalHeight = metadata.height || 500;
+
+  // baseScale is fit-to-box scale (contain fit)
+  const baseScale = Math.min(targetWidth / originalWidth, targetHeight / originalHeight);
+  const finalScale = baseScale * zoom;
+  
+  const resizedWidth = Math.round(originalWidth * finalScale);
+  const resizedHeight = Math.round(originalHeight * finalScale);
+  
+  const resizedBuffer = await img
+    .resize(resizedWidth, resizedHeight)
+    .png()
     .toBuffer();
+
+  // 5. Composite the resized photo onto a solid background canvas (failsafe against out-of-bounds crop)
+  const canvasBg = isFrame ? '#00000000' : '#F3F4F0';
+  const canvasSvg = Buffer.from(
+    `<svg width="${targetWidth}" height="${targetHeight}">
+       <rect width="100%" height="100%" fill="${canvasBg}" />
+     </svg>`
+  );
+  
+  // Centered position + user pan offsets
+  const left = Math.round(targetWidth / 2 - resizedWidth / 2 + panX);
+  const top = Math.round(targetHeight / 2 - resizedHeight / 2 + panY);
+  
+  return await sharp(canvasSvg)
+    .composite([{
+      input: resizedBuffer,
+      left,
+      top
+    }])
+    .png()
+    .toBuffer();
+}
+
+// Color palettes mapping to style selections (For Format A: PFP frame only)
+const themeColors = {
+  emerald: { gradients: ['#10B981', '#059669', '#047857', '#065F46'] },
+  sunset: { gradients: ['#FF4E50', '#F9D423', '#FF5E62', '#E11D48'] },
+  cyber: { gradients: ['#00F2FE', '#4FACFE', '#38BDF8', '#0284C7'] },
+  coastal: { gradients: ['#3B82F6', '#06B6D4', '#2563EB', '#1E40AF'] },
+  retro: { gradients: ['#D946EF', '#8B5CF6', '#F59E0B', '#FF0844'] },
+  gold: { gradients: ['#B45309', '#D97706', '#FBBF24', '#FCD34D'] }
+};
+
+/**
+ * Process Format A: Profile Picture Frame (1080x1080)
+ */
+export async function generateProfileFrame(photoBuffer, params) {
+  const selectedStyle = params.style || 'emerald';
+  const colors = themeColors[selectedStyle] || themeColors.emerald;
+  const gradientStops = colors.gradients;
+
+  // 1. Prepare user image with fine-tuning (zoom & pan) inside 1080x1080 canvas
+  const processedUser = await processUserPhoto(photoBuffer, params, 1080, 1080, true);
 
   // 2. Create circular mask
   const circleMask = Buffer.from(
@@ -64,7 +133,7 @@ export async function generateProfileFrame(photoBuffer, enhance = false) {
   );
 
   // Apply circular mask to the user image
-  const maskedUser = await sharp(resizedUser)
+  const maskedUser = await sharp(processedUser)
     .composite([{
       input: circleMask,
       blend: 'dest-in'
@@ -72,15 +141,15 @@ export async function generateProfileFrame(photoBuffer, enhance = false) {
     .png()
     .toBuffer();
 
-  // 3. Define the SVG overlay with tropical branding
+  // 3. Define the SVG overlay with style-specific gradient colors
   const overlaySvg = Buffer.from(
     `<svg width="1080" height="1080" viewBox="0 0 1080 1080" xmlns="http://www.w3.org/2000/svg">
        <defs>
          <linearGradient id="beachGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-           <stop offset="0%" stop-color="#8B5CF6" />
-           <stop offset="35%" stop-color="#3B82F6" />
-           <stop offset="70%" stop-color="#F97316" />
-           <stop offset="100%" stop-color="#EAB308" />
+           <stop offset="0%" stop-color="${gradientStops[0]}" />
+           <stop offset="35%" stop-color="${gradientStops[1]}" />
+           <stop offset="70%" stop-color="${gradientStops[2]}" />
+           <stop offset="100%" stop-color="${gradientStops[3]}" />
          </linearGradient>
          <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
            <feGaussianBlur stdDeviation="15" result="blur" />
@@ -94,18 +163,12 @@ export async function generateProfileFrame(photoBuffer, enhance = false) {
        <!-- Inner border shadow overlay -->
        <circle cx="540" cy="540" r="490" stroke="#000000" stroke-width="4" fill="none" opacity="0.4" />
        
-       <!-- Decorative beach elements / Palm leaves (Vector drawing) -->
-       <!-- Left Palm Leaf -->
+       <!-- Decorative beach elements -->
        <path d="M120,400 Q80,500 130,600 Q180,500 120,400 Z" fill="url(#beachGrad)" opacity="0.8" />
-       <path d="M110,430 Q60,520 120,610 Q160,510 110,430 Z" fill="url(#beachGrad)" opacity="0.6" />
-       
-       <!-- Right Palm Leaf -->
        <path d="M960,400 Q1000,500 950,600 Q900,500 960,400 Z" fill="url(#beachGrad)" opacity="0.8" />
-       <path d="M970,430 Q1020,520 960,610 Q920,510 970,430 Z" fill="url(#beachGrad)" opacity="0.6" />
        
        <!-- Waves at the bottom -->
        <path d="M160,780 Q320,830 540,780 T920,780 L920,850 L160,850 Z" fill="url(#beachGrad)" opacity="0.25" />
-       <path d="M180,810 Q340,850 540,810 T900,810 L900,860 L180,860 Z" fill="url(#beachGrad)" opacity="0.15" />
        
        <!-- Glassmorphic bottom banner for text -->
        <g filter="url(#glow)">
@@ -131,40 +194,36 @@ export async function generateProfileFrame(photoBuffer, enhance = false) {
 }
 
 /**
- * Process Format B: Builder Card (1080x1350)
- * @param {Buffer} photoBuffer - Raw user photo buffer
- * @param {object} details - { name, role, stack, builderTitle, shareUrl }
- * @param {boolean} enhance - Enhance brightness & saturation toggle
- * @returns {Promise<Buffer>} Generated card PNG buffer
+ * Process Format B: Builder Card (1080x1350) - RECTANGULAR PHOTO & NO QR CODE & DYNAMIC SKILLS CAPSULES
  */
-export async function generateBuilderCard(photoBuffer, details, enhance = false) {
-  const { name, role, stack, builderTitle, shareUrl } = details;
+export async function generateBuilderCard(photoBuffer, details, params) {
+  const { name, stack, builderTitle } = details;
   const escapedName = escapeXml(name).toUpperCase();
-  const escapedRole = escapeXml(role);
-  const escapedStack = escapeXml(stack);
-  const escapedTitle = escapeXml(builderTitle).toUpperCase();
-
-  // 1. Prepare user image with optional enhancement
-  let userSharp = sharp(photoBuffer);
+  const escapedTitle = escapeXml(builderTitle).toLowerCase(); // all lowercase as in attachment
   
-  if (enhance) {
-    userSharp = userSharp.modulate({
-      brightness: 1.08,
-      saturation: 1.15
-    });
-  }
+  // Strict layout properties from the attachment
+  const cardBorderColor = '#006B3F';
+  const cardBgColor = '#F3F4F0';
+  const highlightColor = '#FDE047';
+  const bubbleColor = '#FDE047';
+  const nameTextColor = '#000000';
+  const subtextColor = '#4B5563';
+  const quoteLine3Color = '#000000';
 
-  // Create rounded rectangle mask for the card photo (400x400, rx=40)
-  const photoSize = 400;
+  // 1. Prepare user image with fine-tuning (zoom & pan) inside a 725x760 rectangle box (isFrame = false)
+  const photoWidth = 725;
+  const photoHeight = 760;
+  const processedUserPhoto = await processUserPhoto(photoBuffer, params, photoWidth, photoHeight, false);
+
+  // 2. Create rounded rectangle mask for the card photo (rx=32)
   const roundedMask = Buffer.from(
-    `<svg width="${photoSize}" height="${photoSize}">
-       <rect x="0" y="0" width="${photoSize}" height="${photoSize}" rx="40" ry="40" fill="white"/>
+    `<svg width="${photoWidth}" height="${photoHeight}">
+       <rect x="0" y="0" width="${photoWidth}" height="${photoHeight}" rx="32" ry="32" fill="white"/>
      </svg>`
   );
 
-  // Resize and mask user photo
-  const processedUserPhoto = await userSharp
-    .resize(photoSize, photoSize, { fit: 'cover', position: 'center' })
+  // Apply rounded mask to the processed user photo
+  const maskedUserPhoto = await sharp(processedUserPhoto)
     .composite([{
       input: roundedMask,
       blend: 'dest-in'
@@ -172,132 +231,111 @@ export async function generateBuilderCard(photoBuffer, details, enhance = false)
     .png()
     .toBuffer();
 
-  // 2. Generate custom QR Code
-  // Generate QR Code with white lines on transparent background
-  const qrCodeBuffer = await QRCode.toBuffer(shareUrl || 'https://hhgoa.in', {
-    width: 140,
-    margin: 1,
-    color: {
-      dark: '#FFFFFF', // White QR code dots
-      light: '#00000000' // Transparent background
-    }
-  });
-
-  // 3. Create background image (1080x1350 with gradients and glowing orbs)
+  // 3. Create background image (1080x1350)
   const bgSvg = Buffer.from(
     `<svg width="1080" height="1350" viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">
-       <defs>
-         <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-           <stop offset="0%" stop-color="#060814" />
-           <stop offset="50%" stop-color="#0C0F24" />
-           <stop offset="100%" stop-color="#03040A" />
-         </linearGradient>
-         <filter id="orbBlur" x="-50%" y="-50%" width="200%" height="200%">
-           <feGaussianBlur stdDeviation="100" />
-         </filter>
-       </defs>
+       <!-- Base background (cream color) -->
+       <rect width="1080" height="1350" fill="${cardBgColor}" />
        
-       <rect width="1080" height="1350" fill="url(#bgGrad)" />
+       <!-- Thick forest green badge border -->
+       <rect x="12" y="12" width="1056" height="1326" rx="48" fill="none" stroke="${cardBorderColor}" stroke-width="24" />
        
-       <!-- Glowing beach theme orbs -->
-       <circle cx="150" cy="250" r="280" fill="#8B5CF6" opacity="0.22" filter="url(#orbBlur)" />
-       <circle cx="950" cy="1150" r="320" fill="#F97316" opacity="0.18" filter="url(#orbBlur)" />
-       <circle cx="850" cy="300" r="250" fill="#3B82F6" opacity="0.12" filter="url(#orbBlur)" />
-       <circle cx="200" cy="1100" r="250" fill="#EAB308" opacity="0.1" filter="url(#orbBlur)" />
+       <!-- Fine black inner frame line -->
+       <rect x="24" y="24" width="1032" height="1302" rx="36" fill="none" stroke="#000000" stroke-width="3" />
+       
+       <!-- Lanyard punch slot at the top center -->
+       <rect x="490" y="30" width="100" height="24" rx="12" fill="#1E293B" stroke="#000000" stroke-width="3" />
      </svg>`
   );
 
   const backgroundBuffer = await sharp(bgSvg).png().toBuffer();
 
-  // 4. Create the main card structure and text overlay SVG
+  // 4. Parse Stack string to build Left vertical skill column badges dynamically
+  const skillList = stack.split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  const defaultSkills = ['Py', 'DB', 'JS', 'UI', 'Git', 'Go'];
+  const skillsToRender = [];
+  for (let i = 0; i < 6; i++) {
+    if (i < skillList.length) {
+      skillsToRender.push(skillList[i]);
+    } else {
+      skillsToRender.push(defaultSkills[i - skillList.length]);
+    }
+  }
+
+  // Compile vertical skills circular pills SVG content - dynamically grows if text is long!
+  let skillsSvg = '';
+  for (let i = 0; i < 6; i++) {
+    const skill = skillsToRender[i];
+    const displaySkill = skill.toUpperCase();
+    const y = 390 + (i * 110); 
+    
+    let fill = '#FFFFFF';
+    let textColor = '#000000';
+    
+    if (i === 0) { fill = '#FDE047'; } 
+    else if (i === 1) { fill = '#006B3F'; textColor = '#FFFFFF'; } 
+    else if (i === 4) { fill = '#3B82F6'; textColor = '#FFFFFF'; } 
+
+    // Dynamic width calculation so skills of any character length fit perfectly
+    // 76px is standard diameter (circle). It grows into capsule up to 160px max width.
+    const charWidth = 14;
+    const badgeWidth = Math.min(160, Math.max(76, displaySkill.length * charWidth + 24));
+    
+    // Dynamically scale down font if text is longer
+    const fontSize = displaySkill.length > 6 ? 16 : 22;
+    
+    skillsSvg += `
+      <rect x="${92 - badgeWidth / 2}" y="${y - 38}" width="${badgeWidth}" height="76" rx="38" ry="38" fill="${fill}" stroke="#000000" stroke-width="3" />
+      <text x="92" y="${y + 9}" font-family="'Outfit', system-ui, sans-serif" font-weight="900" font-size="${fontSize}" text-anchor="middle" fill="${textColor}">${escapeXml(displaySkill)}</text>
+    `;
+  }
+
+  // 5. Create the card structure and text overlay SVG
   const cardOverlaySvg = Buffer.from(
     `<svg width="1080" height="1350" viewBox="0 0 1080 1350" xmlns="http://www.w3.org/2000/svg">
-       <defs>
-         <linearGradient id="beachGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-           <stop offset="0%" stop-color="#8B5CF6" />
-           <stop offset="35%" stop-color="#3B82F6" />
-           <stop offset="70%" stop-color="#F97316" />
-           <stop offset="100%" stop-color="#EAB308" />
-         </linearGradient>
-         <filter id="cardGlow" x="-20%" y="-20%" width="140%" height="140%">
-           <feGaussianBlur stdDeviation="25" result="blur" />
-           <feComposite in="SourceGraphic" in2="blur" operator="over" />
-         </filter>
-       </defs>
+       <!-- Top certified Goa badge speech bubble -->
+       <path d="M 480,35 h 120 a 12,12 0 0 1 12,12 v 38 a 12,12 0 0 1 -12,12 h -45 l -15,14 l -15,-14 h -45 a 12,12 0 0 1 -12,-12 v -38 a 12,12 0 0 1 12,-12 Z" fill="${bubbleColor}" stroke="#000000" stroke-width="3.5" />
+       <text x="540" y="82" font-family="'Outfit', 'Inter', system-ui, sans-serif" font-weight="900" font-size="34" text-anchor="middle" fill="#000000">गोवा</text>
+       <text x="540" y="128" font-family="'Outfit', system-ui, sans-serif" font-weight="800" font-size="16" letter-spacing="2" text-anchor="middle" fill="#000000">certified</text>
 
-       <!-- Card Shape (x: 120, y: 120, w: 840, h: 1110) -->
-       <!-- Outer fine neon card border -->
-       <rect x="116" y="116" width="848" height="1118" rx="48" stroke="url(#beachGrad)" stroke-width="3" fill="none" opacity="0.5" />
-       
-       <!-- Card body: Glassmorphic semi-transparent container -->
-       <rect x="120" y="120" width="840" height="1110" rx="44" fill="#0C0F1D" fill-opacity="0.75" stroke="rgba(255, 255, 255, 0.08)" stroke-width="2" />
-       
-       <!-- Card branding elements -->
-       <g filter="url(#cardGlow)">
-         <!-- Little orange accent line at the top -->
-         <rect x="440" y="120" width="200" height="6" rx="3" fill="url(#beachGrad)" />
-       </g>
+       <!-- Main Builder Title (large, bold lowercase text with dot) -->
+       <text x="540" y="205" fill="#000000" font-family="'Outfit', system-ui, sans-serif" font-size="64" font-weight="900" text-anchor="middle" letter-spacing="-1">${escapedTitle}.</text>
 
-       <!-- Event Logo & Header -->
-       <g transform="translate(540, 205)">
-         <!-- Stylized Logo Symbol -->
-         <path d="M-25,-25 C-35,-15 -35,5 -25,15 C-15,25 5,25 15,15 C25,5 25,-15 15,-25 Z" fill="none" stroke="url(#beachGrad)" stroke-width="4" opacity="0.9" />
-         <circle cx="-5" cy="-5" r="8" fill="#EAB308" />
-         <circle cx="5" cy="5" r="6" fill="#F97316" />
-         
-         <text x="35" y="5" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="900" letter-spacing="3">HH GOA</text>
-         <text x="35" y="28" fill="#A0AEC0" font-family="'Inter', system-ui, sans-serif" font-size="12" font-weight="700" letter-spacing="5">2026 BUILDER</text>
-       </g>
+       <!-- Name marker highlight box -->
+       <rect x="360" y="250" width="360" height="58" rx="8" fill="${highlightColor}" stroke="#000000" stroke-width="3" />
+       <!-- Name centered text -->
+       <text x="540" y="292" fill="${nameTextColor}" font-family="'Outfit', system-ui, sans-serif" font-size="32" font-weight="900" text-anchor="middle">${escapedName}</text>
+       
+       <!-- Event Subtitle -->
+       <text x="540" y="342" fill="${subtextColor}" font-family="'Outfit', system-ui, sans-serif" font-size="20" font-weight="800" text-anchor="middle">Builder @ HH Goa 2026</text>
 
-       <!-- Photo Frame Glow (centered horizontally: X = 540 - 200 - 8 = 332) -->
-       <rect x="332" y="272" width="416" height="416" rx="48" stroke="url(#beachGrad)" stroke-width="6" fill="none" opacity="0.8" />
-       <rect x="336" y="276" width="408" height="408" rx="44" stroke="#000000" stroke-width="2" fill="none" opacity="0.3" />
+       <!-- Vertical Skill circular pills -->
+       ${skillsSvg}
+       
+       <!-- Tiny Sparkle Star decoration on the right border of photo container -->
+       <path d="M 945,735 L 950,750 L 965,755 L 950,760 L 945,775 L 940,760 L 925,755 L 940,750 Z" fill="#F43F5E" stroke="#000000" stroke-width="3" />
 
-       <!-- Detail Fields -->
-       <!-- Name (Centered, bold, white) -->
-       <text x="540" y="785" fill="#FFFFFF" font-family="'Inter', system-ui, sans-serif" font-size="54" font-weight="900" text-anchor="middle" letter-spacing="1">${escapedName}</text>
-       
-       <!-- Role & Tech Stack -->
-       <text x="540" y="845" fill="#94A3B8" font-family="'Inter', system-ui, sans-serif" font-size="28" font-weight="700" text-anchor="middle">${escapedRole}</text>
-       
-       <!-- Stack pill style representation -->
-       <text x="540" y="895" fill="#64748B" font-family="'Inter', system-ui, sans-serif" font-size="22" font-weight="600" text-anchor="middle">${escapedStack}</text>
-       
-       <!-- Auto Builder Title Badge -->
-       <g transform="translate(540, 960)">
-         <rect x="-210" y="-30" width="420" height="60" rx="30" fill="#131930" fill-opacity="0.9" stroke="url(#beachGrad)" stroke-width="2.5" />
-         <text x="0" y="8" fill="#F97316" font-family="'Inter', system-ui, sans-serif" font-size="22" font-weight="900" letter-spacing="4" text-anchor="middle">${escapedTitle}</text>
-       </g>
-       
-       <!-- QR Code Container frame -->
-       <rect x="696" y="1036" width="148" height="148" rx="16" fill="#131930" fill-opacity="0.6" stroke="rgba(255, 255, 255, 0.1)" stroke-width="1.5" />
+       <!-- Bottom Left Text Tags (QR Code completely removed) -->
+       <text x="50" y="1230" font-family="'Outfit', monospace" font-weight="900" font-size="20" fill="${cardBorderColor}">#FrameInGoa</text>
+       <text x="50" y="1260" font-family="'Outfit', monospace" font-weight="900" font-size="20" fill="#64748B">hh-goa-2026</text>
 
-       <!-- Technical Badge Data (Left side of footer) -->
-       <g transform="translate(180, 1055)" font-family="monospace">
-         <text x="0" y="20" fill="#64748B" font-size="14" font-weight="700">SYS: <tspan fill="#A0AEC0">HH-GOA-2026</tspan></text>
-         <text x="0" y="45" fill="#64748B" font-size="14" font-weight="700">STATUS: <tspan fill="#10B981">VERIFIED</tspan></text>
-         <text x="0" y="70" fill="#64748B" font-size="14" font-weight="700">LOC: <tspan fill="#3B82F6">GOA, IN</tspan></text>
-         <text x="0" y="95" fill="#64748B" font-size="14" font-weight="700">BADGE: <tspan fill="#EAB308">#HACKER</tspan></text>
-       </g>
+       <!-- Bottom Right Quote (Ideas, sleep, Goa) -->
+       <text x="945" y="1198" font-family="'Outfit', system-ui, sans-serif" font-weight="900" font-style="italic" font-size="24" text-anchor="end" fill="#374151">Ideas shipped,</text>
+       <text x="945" y="1233" font-family="'Outfit', system-ui, sans-serif" font-weight="900" font-style="italic" font-size="24" text-anchor="end" fill="#374151">sleep skipped,</text>
+       <text x="945" y="1268" font-family="'Outfit', system-ui, sans-serif" font-weight="900" font-style="italic" font-size="24" text-anchor="end" fill="${quoteLine3Color}">Goa lived.</text>
      </svg>`
   );
 
-  // 5. Composite everything together
-  // Base background (1080x1350)
-  // + User Photo (placed at left: 340, top: 280)
-  // + QR Code (placed at left: 700, top: 1040)
-  // + SVG Card Details & Text Overlay (1080x1350)
+  // 7. Composite everything together
   return await sharp(backgroundBuffer)
     .composite([
       {
-        input: processedUserPhoto,
-        top: 280,
-        left: 340
-      },
-      {
-        input: qrCodeBuffer,
-        top: 1040,
-        left: 700
+        input: maskedUserPhoto,
+        top: 370,
+        left: 200
       },
       {
         input: cardOverlaySvg,
