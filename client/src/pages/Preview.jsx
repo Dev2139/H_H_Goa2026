@@ -3,7 +3,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Download, Twitter, ArrowLeft, RefreshCw, Share2, 
-  QrCode, ExternalLink, Calendar, CheckCircle2, ShieldAlert
+  QrCode, ExternalLink, Calendar, CheckCircle2, ShieldAlert,
+  Copy, Image as ImageIcon, Sparkles
 } from 'lucide-react';
 import { getBadgeMetadata } from '../services/api';
 import confetti from 'canvas-confetti';
@@ -126,6 +127,36 @@ export default function Preview() {
     }
   };
 
+  // Helper to obtain image blob
+  const getImageBlob = async () => {
+    if (!metadata?.generatedImageUrl) return null;
+    if (metadata.generatedImageUrl.startsWith('data:')) {
+      const res = await fetch(metadata.generatedImageUrl);
+      return await res.blob();
+    }
+    const response = await fetch(metadata.generatedImageUrl);
+    return await response.blob();
+  };
+
+  // Copy Image directly to clipboard (for pasting into tweets/chats)
+  const handleCopyImage = async () => {
+    try {
+      const blob = await getImageBlob();
+      if (!blob) return;
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        toast.success('Card image copied to clipboard! Paste (Ctrl+V) anywhere.');
+      } else {
+        toast.error('Direct clipboard copy is not supported in this browser. Please download the PNG.');
+      }
+    } catch (err) {
+      console.error('Failed to copy image to clipboard:', err);
+      toast.error('Could not copy image directly. Please download the PNG.');
+    }
+  };
+
   // Copy shareable link to clipboard
   const handleCopyLink = () => {
     const frontendUrl = window.location.origin;
@@ -134,21 +165,60 @@ export default function Preview() {
     toast.success('Shareable link copied to clipboard!');
   };
 
-  // Generate X (Twitter) Intent
-  const handleShareToX = () => {
-    // We point X to our server-side redirect route because that route serves the static Open Graph HTML tags for Twitter Cards!
-    // E.g., http://localhost:5000/share/a1b2c3d4 or https://api-server.com/share/a1b2c3d4
-    const apiBaseUrl = import.meta.env.VITE_API_URL 
-      ? import.meta.env.VITE_API_URL.replace('/api', '') 
-      : 'http://localhost:5000';
-      
-    const serverShareUrl = `${apiBaseUrl}/share/${shareId}`;
+  // Native share sheet (Mobile & supported desktop browsers)
+  const handleNativeShare = async () => {
+    try {
+      const blob = await getImageBlob();
+      const frontendUrl = window.location.origin;
+      const shareData = {
+        title: 'HH Goa 2026 Official Builder Card',
+        text: `Excited for HH Goa 2026! 🌴 Just created my official Builder Card 🚀\nCreate yours here: ${frontendUrl}`,
+        url: frontendUrl
+      };
+
+      if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], 'badge.png', { type: 'image/png' })] })) {
+        const file = new File([blob], `hh-goa-2026-${metadata?.imageType === 'frame' ? 'pfp' : 'card'}.png`, { type: 'image/png' });
+        await navigator.share({
+          ...shareData,
+          files: [file]
+        });
+        toast.success('Shared successfully!');
+        return;
+      }
+
+      if (navigator.share) {
+        await navigator.share(shareData);
+        toast.success('Shared successfully!');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Share failed:', err);
+      }
+    }
+  };
+
+  // Generate X (Twitter) Intent with live frontend link & auto-copied image
+  const handleShareToX = async () => {
+    const frontendUrl = window.location.origin;
     
+    // Auto-copy the card image to clipboard so user can effortlessly press Ctrl+V in their tweet
+    try {
+      const blob = await getImageBlob();
+      if (blob && navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob })
+        ]);
+        toast.success('Card image copied to clipboard! Press Ctrl+V to attach it on X.', { duration: 5000 });
+      }
+    } catch (e) {
+      // Continue silently if clipboard write is blocked
+    }
+
     const text = metadata?.imageType === 'card'
-      ? `Excited for HH Goa 2026! Just created my official Builder Card 🚀\nJoin the wave and frame yours here:`
-      : `Excited for HH Goa 2026! Just generated my official event profile frame 🌊\nJoin the wave and frame yours here:`;
+      ? `Excited for HH Goa 2026! 🌴 Just designed my official Builder Card 🚀\n\n✨ Design your custom builder card & pass here 👉`
+      : `Excited for HH Goa 2026! 🌊 Just generated my official event profile frame 🚀\n\n✨ Generate your official Goa profile frame here 👉`;
       
-    const twitterIntentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(serverShareUrl)}&hashtags=FrameInGoa,HHGoa2026`;
+    const twitterIntentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(frontendUrl)}&hashtags=HHGoa2026,FrameInGoa,Builder`;
     window.open(twitterIntentUrl, '_blank');
   };
 
@@ -275,24 +345,32 @@ export default function Preview() {
               Share to X
             </button>
 
+            {/* Copy Card Image to Clipboard */}
+            <button
+              onClick={handleCopyImage}
+              className="flex items-center justify-center gap-2.5 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 py-4 text-sm font-bold text-white transition-all duration-200"
+            >
+              <ImageIcon className="h-4.5 w-4.5 text-emerald-400" />
+              Copy Card Image
+            </button>
+
             {/* Share Link Copier */}
             <button
               onClick={handleCopyLink}
               className="flex items-center justify-center gap-2.5 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 py-4 text-sm font-bold text-white transition-all duration-200"
             >
               <Share2 className="h-4.5 w-4.5 text-brand-orange" />
-              Copy Share Link
+              Copy Generator Link
             </button>
 
-            {/* QR Scanner Display */}
-            <button
-              onClick={() => setShowQrModal(true)}
-              className="flex items-center justify-center gap-2.5 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 py-4 text-sm font-bold text-white transition-all duration-200"
-            >
-              <QrCode className="h-4.5 w-4.5 text-brand-yellow" />
-              View QR Scan Code
-            </button>
+          </div>
 
+          {/* Quick Tip for X / Social Sharing */}
+          <div className="rounded-xl bg-white/[0.03] border border-white/5 p-4 flex items-start gap-3 text-xs sm:text-sm text-slate-300">
+            <Sparkles className="h-4 w-4 text-brand-yellow shrink-0 mt-0.5" />
+            <span>
+              <strong>Sharing to X:</strong> Clicking <em>Share to X</em> automatically pre-fills your tweet with the generator link and copies your card image to your clipboard—simply press <strong>Ctrl+V (Paste)</strong> to attach your card image!
+            </span>
           </div>
 
           <div className="border-t border-white/5 pt-6 flex items-center justify-between">
