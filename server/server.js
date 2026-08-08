@@ -139,8 +139,9 @@ app.use(async (req, res, next) => {
   next();
 });
 
-// Only listen to port in local development (Vercel uses the default export)
-if (process.env.NODE_ENV !== 'production') {
+// Listen on port in standalone server environments (Render, Railway, Fly.io, Local)
+// On Vercel Serverless, VERCEL env var is defined and Vercel exports the handler
+if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });

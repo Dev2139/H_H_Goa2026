@@ -51,6 +51,27 @@ export default function Preview() {
   useEffect(() => {
     async function loadMetadata() {
       setLoading(true);
+
+      // 1. Check router navigation state
+      if (location.state?.badgeData) {
+        setMetadata(location.state.badgeData);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Check local sessionStorage fallback
+      const cached = sessionStorage.getItem(`badge_${shareId}`);
+      if (cached) {
+        try {
+          setMetadata(JSON.parse(cached));
+          setLoading(false);
+          return;
+        } catch (e) {
+          console.warn('Failed to parse cached badge:', e);
+        }
+      }
+
+      // 3. Query server API
       try {
         const response = await getBadgeMetadata(shareId);
         setMetadata(response.data);
@@ -62,24 +83,39 @@ export default function Preview() {
       }
     }
     loadMetadata();
-  }, [shareId]);
+  }, [shareId, location.state]);
 
   // Download Image Handler
   const handleDownload = async () => {
     if (!metadata?.generatedImageUrl) return;
     setDownloading(true);
     try {
-      const response = await fetch(metadata.generatedImageUrl);
-      const blob = await response.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.download = `hh-goa-2026-${metadata.imageType === 'frame' ? 'pfp' : 'badge'}-${shareId}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(blobUrl);
-      toast.success('Download started successfully!');
+      const isDataUrl = metadata.generatedImageUrl.startsWith('data:');
+      const filename = `hh-goa-2026-${metadata.imageType === 'frame' ? 'pfp' : 'badge'}-${shareId}.png`;
+
+      if (isDataUrl) {
+        // Direct download for base64 / canvas generated image
+        const link = document.createElement('a');
+        link.href = metadata.generatedImageUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('Download started successfully!');
+      } else {
+        // Fetch blob for remote URL
+        const response = await fetch(metadata.generatedImageUrl);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+        toast.success('Download started successfully!');
+      }
     } catch (err) {
       console.error('AJAX blob download failed, falling back to direct tab:', err);
       // Fallback: open in new window

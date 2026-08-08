@@ -8,6 +8,7 @@ import {
   Volume2, VolumeX, Eye, Maximize2, Download, Twitter, Award, Sliders, RefreshCw
 } from 'lucide-react';
 import { generateFrame, generateCard } from '../services/api';
+import { renderBuilderCardOnCanvas, renderProfileFrameOnCanvas } from '../utils/clientCanvasRenderer';
 import toast from 'react-hot-toast';
 
 export default function Generator() {
@@ -210,26 +211,59 @@ export default function Generator() {
       let res;
       const fileOrUrl = file === 'sample' ? previewUrl : file;
       
-      if (activeTab === 'frame') {
-        res = await generateFrame(fileOrUrl, params, (progressEvent) => {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(percent);
-        });
-      } else {
-        // Role is fixed to 'Builder @ HH Goa 2026' on every card
-        res = await generateCard(fileOrUrl, {
-          name: data.name,
+      try {
+        if (activeTab === 'frame') {
+          res = await generateFrame(fileOrUrl, params, (progressEvent) => {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          });
+        } else {
+          // Role is fixed to 'Builder @ HH Goa 2026' on every card
+          res = await generateCard(fileOrUrl, {
+            name: data.name,
+            role: 'Builder @ HH Goa 2026',
+            stack: data.stack,
+            builderTitle: data.builderTitle
+          }, params, (progressEvent) => {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          });
+        }
+      } catch (apiError) {
+        console.warn('Backend server unavailable or returned error, rendering on client canvas:', apiError);
+        // Instant Client-Side HTML5 Canvas Generation Fallback
+        const generatedDataUrl = activeTab === 'frame'
+          ? await renderProfileFrameOnCanvas(fileOrUrl, params)
+          : await renderBuilderCardOnCanvas(fileOrUrl, {
+              name: data.name,
+              role: 'Builder @ HH Goa 2026',
+              stack: data.stack,
+              builderTitle: data.builderTitle
+            }, params);
+
+        const shareId = 'local-' + Math.random().toString(36).substring(2, 9);
+        const fallbackRecord = {
+          shareId,
+          name: data.name || 'BUILDER',
           role: 'Builder @ HH Goa 2026',
-          stack: data.stack,
-          builderTitle: data.builderTitle
-        }, params, (progressEvent) => {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(percent);
-        });
+          stack: data.stack || '',
+          builderTitle: data.builderTitle || 'builder',
+          imageType: activeTab,
+          generatedImageUrl: generatedDataUrl,
+          createdAt: new Date().toISOString()
+        };
+
+        // Cache locally for instant preview & download
+        try {
+          sessionStorage.setItem(`badge_${shareId}`, JSON.stringify(fallbackRecord));
+        } catch (e) {
+          console.warn('SessionStorage quota exceeded, state will pass via navigation');
+        }
+        res = { data: fallbackRecord };
       }
 
       toast.success('Pass generated successfully!');
-      navigate(`/share/${res.data.shareId}`, { state: { justGenerated: true } });
+      navigate(`/share/${res.data.shareId}`, { state: { justGenerated: true, badgeData: res.data } });
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.error || 'Failed to render badge card.');
