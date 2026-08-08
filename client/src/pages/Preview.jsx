@@ -19,6 +19,7 @@ export default function Preview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   // Trigger confetti if navigated from fresh generation
@@ -197,29 +198,52 @@ export default function Preview() {
     }
   };
 
-  // Generate X (Twitter) Intent with live frontend link & auto-copied image
+  // Generate X (Twitter) Intent with live frontend link & attached/copied card image
   const handleShareToX = async () => {
     const frontendUrl = window.location.origin;
+    const isCard = metadata?.imageType === 'card';
     
-    // Auto-copy the card image to clipboard so user can effortlessly press Ctrl+V in their tweet
+    const tweetText = isCard
+      ? `Excited for HH Goa 2026! 🌴 Just designed my official Builder Card 🚀\n\nI made mine—now make yours and join the wave here:\n👉`
+      : `Excited for HH Goa 2026! 🌊 Just generated my official event profile frame 🚀\n\nI made mine—now make yours and join the wave here:\n👉`;
+
+    // 1. If native file share is supported (e.g. mobile Safari / Chrome on iOS & Android)
+    try {
+      const blob = await getImageBlob();
+      if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], 'card.png', { type: 'image/png' })] })) {
+        const file = new File([blob], `hh-goa-2026-${isCard ? 'builder-card' : 'pfp-frame'}.png`, { type: 'image/png' });
+        await navigator.share({
+          title: 'HH Goa 2026 Builder Card',
+          text: `${tweetText} ${frontendUrl} #HHGoa2026 #FrameInGoa #Builder`,
+          files: [file]
+        });
+        toast.success('Shared with card image successfully!');
+        return;
+      }
+    } catch (shareErr) {
+      if (shareErr.name === 'AbortError') return;
+      console.warn('Native file share skipped:', shareErr.message);
+    }
+
+    // 2. On Desktop / Web Intent: Automatically copy image to clipboard & trigger download
     try {
       const blob = await getImageBlob();
       if (blob && navigator.clipboard && window.ClipboardItem) {
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': blob })
         ]);
-        toast.success('Card image copied to clipboard! Press Ctrl+V to attach it on X.', { duration: 5000 });
+        toast.success('Card image copied to clipboard! Paste (Ctrl+V) into your tweet.', { duration: 5000 });
       }
-    } catch (e) {
-      // Continue silently if clipboard write is blocked
+    } catch (clipErr) {
+      console.warn('Clipboard write skipped:', clipErr.message);
     }
 
-    const text = metadata?.imageType === 'card'
-      ? `Excited for HH Goa 2026! 🌴 Just designed my official Builder Card 🚀\n\n✨ Design your custom builder card & pass here 👉`
-      : `Excited for HH Goa 2026! 🌊 Just generated my official event profile frame 🚀\n\n✨ Generate your official Goa profile frame here 👉`;
-      
-    const twitterIntentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(frontendUrl)}&hashtags=HHGoa2026,FrameInGoa,Builder`;
+    // 3. Open Twitter Intent with pre-filled call to action & link
+    const twitterIntentUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}&url=${encodeURIComponent(frontendUrl)}&hashtags=HHGoa2026,FrameInGoa,Builder`;
     window.open(twitterIntentUrl, '_blank');
+
+    // 4. Show helper guidance modal
+    setShowShareModal(true);
   };
 
   if (loading) {
@@ -436,6 +460,76 @@ export default function Preview() {
                   className="w-full py-2.5 text-xs font-bold text-slate-400 hover:text-white"
                 >
                   Close Modal
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* X / Twitter Share Guidance Modal */}
+      <AnimatePresence>
+        {showShareModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="glass-card rounded-3xl p-6 sm:p-8 max-w-md w-full border border-white/10 text-center"
+            >
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-[#1DA1F2]/10 border border-[#1DA1F2]/20 flex items-center justify-center mb-4">
+                <Twitter className="h-6 w-6 text-[#1DA1F2] fill-[#1DA1F2]" />
+              </div>
+
+              <h3 className="text-xl font-bold text-white mb-1">Tweet Draft Opened on X!</h3>
+              <p className="text-xs sm:text-sm text-slate-300 mb-6">
+                Your post text & generator link are ready. To include your card picture in the tweet:
+              </p>
+
+              {/* Step by Step Guide Box */}
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left flex flex-col gap-3 mb-6">
+                <div className="flex items-start gap-3">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-brand-purple text-white text-xs font-black shrink-0">1</span>
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    <strong>Card Image is Copied:</strong> In your opened X / Twitter tab, simply press <kbd className="px-1.5 py-0.5 rounded bg-black/60 border border-white/20 text-yellow-300 font-mono font-bold">Ctrl + V</kbd> (or Paste) to attach your picture!
+                  </p>
+                </div>
+
+                <div className="flex items-start gap-3 border-t border-white/5 pt-3">
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-brand-blue text-white text-xs font-black shrink-0">2</span>
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    Or click the <strong>🖼️ Image/Media</strong> button in the tweet composer and select your downloaded PNG.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={handleCopyImage}
+                  className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-gradient-to-r from-brand-purple to-brand-blue text-xs font-extrabold text-white hover:opacity-95 shadow-lg"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy Card Image to Clipboard Again
+                </button>
+
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300 hover:text-white hover:bg-white/10"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download PNG
+                </button>
+
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="w-full py-2 text-xs font-bold text-slate-400 hover:text-white"
+                >
+                  Got It, Close
                 </button>
               </div>
             </motion.div>
