@@ -8,8 +8,36 @@ import {
 } from '../utils/imageProcessor.js';
 import { getRandomBuilderTitle } from '../utils/builderTitles.js';
 
-// Helper to generate a short unique ID
-const generateShortId = () => crypto.randomBytes(6).toString('hex');
+// In-memory fallback cache when MongoDB is offline or disconnected
+const memoryBadgeStore = new Map();
+
+// Helper to save badge record safely
+const saveBadgeRecord = async (recordData) => {
+  try {
+    const imageRecord = new Image(recordData);
+    await imageRecord.save();
+    return imageRecord.toObject ? imageRecord.toObject() : imageRecord;
+  } catch (dbErr) {
+    console.warn('MongoDB save failed, caching badge in-memory:', dbErr.message);
+    const fallbackRecord = {
+      ...recordData,
+      createdAt: new Date()
+    };
+    memoryBadgeStore.set(recordData.shareId, fallbackRecord);
+    return fallbackRecord;
+  }
+};
+
+// Helper to find badge record safely
+const findBadgeRecord = async (shareId) => {
+  try {
+    const record = await Image.findOne({ shareId });
+    if (record) return record;
+  } catch (dbErr) {
+    console.warn('MongoDB lookup failed, checking in-memory cache:', dbErr.message);
+  }
+  return memoryBadgeStore.get(shareId) || null;
+};
 
 /**
  * Handle direct file upload (e.g. for preview before generating)
@@ -99,14 +127,13 @@ export const generateFrame = async (req, res) => {
     const filename = `pfp-${shareId}.png`;
     const generatedImageUrl = await uploadImage(generatedBuffer, filename, 'hh-goa-2026/generated', req);
 
-    // Save record to DB with original image link
-    const imageRecord = new Image({
+    // Save record with database / in-memory fallback
+    const imageRecord = await saveBadgeRecord({
       imageType: 'frame',
       originalImageUrl,
       generatedImageUrl,
       shareId
     });
-    await imageRecord.save();
 
     return res.status(201).json(imageRecord);
   } catch (error) {
@@ -186,8 +213,8 @@ export const generateCard = async (req, res) => {
     const filename = `card-${shareId}.png`;
     const generatedImageUrl = await uploadImage(generatedBuffer, filename, 'hh-goa-2026/generated', req);
 
-    // Save record to DB with original image link
-    const imageRecord = new Image({
+    // Save record with database / in-memory fallback
+    const imageRecord = await saveBadgeRecord({
       name,
       role,
       stack,
@@ -197,7 +224,6 @@ export const generateCard = async (req, res) => {
       generatedImageUrl,
       shareId
     });
-    await imageRecord.save();
 
     return res.status(201).json(imageRecord);
   } catch (error) {
@@ -212,7 +238,7 @@ export const generateCard = async (req, res) => {
 export const getImageMetadata = async (req, res) => {
   try {
     const { shareId } = req.params;
-    const imageRecord = await Image.findOne({ shareId });
+    const imageRecord = await findBadgeRecord(shareId);
 
     if (!imageRecord) {
       return res.status(404).json({ error: 'Badge not found or expired.' });
@@ -231,17 +257,24 @@ export const getImageMetadata = async (req, res) => {
 export const deleteImageMetadata = async (req, res) => {
   try {
     const { shareId } = req.params;
-    const imageRecord = await Image.findOne({ shareId });
+    const imageRecord = await findBadgeRecord(shareId);
 
     if (!imageRecord) {
       return res.status(404).json({ error: 'Badge not found or already deleted.' });
     }
 
     // Delete image from storage
-    await deleteImage(imageRecord.generatedImageUrl);
+    if (imageRecord.generatedImageUrl) {
+      await deleteImage(imageRecord.generatedImageUrl);
+    }
 
-    // Delete from DB
-    await Image.deleteOne({ shareId });
+    // Delete from DB & in-memory cache
+    memoryBadgeStore.delete(shareId);
+    try {
+      await Image.deleteOne({ shareId });
+    } catch (dbErr) {
+      console.warn('DB delete error:', dbErr.message);
+    }
 
     return res.status(200).json({ message: 'Badge deleted successfully.' });
   } catch (error) {
@@ -256,10 +289,16 @@ export const deleteImageMetadata = async (req, res) => {
 export const getRecentGallery = async (req, res) => {
   try {
     // Return last 8 generated cards/frames for the showcase gallery
-    const recent = await Image.find()
-      .sort({ createdAt: -1 })
-      .limit(8)
-      .select('shareId imageType generatedImageUrl name builderTitle');
+    let recent = [];
+    try {
+      recent = await Image.find()
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .select('shareId imageType generatedImageUrl name builderTitle');
+    } catch (dbErr) {
+      console.warn('DB gallery fetch failed, falling back to memory store:', dbErr.message);
+      recent = Array.from(memoryBadgeStore.values()).slice(-8).reverse();
+    }
       
     return res.status(200).json(recent);
   } catch (error) {
@@ -274,7 +313,7 @@ export const getRecentGallery = async (req, res) => {
 export const serveSharePage = async (req, res) => {
   try {
     const { shareId } = req.params;
-    const imageRecord = await Image.findOne({ shareId });
+    const imageRecord = await findBadgeRecord(shareId);
 
     if (!imageRecord) {
       // Fallback redirect if not found

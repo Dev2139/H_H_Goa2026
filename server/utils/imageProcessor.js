@@ -39,26 +39,22 @@ export async function convertHeicToPng(buffer) {
 async function processUserPhoto(photoBuffer, params, targetWidth = 360, targetHeight = 360, isFrame = false) {
   const { zoom = 1.0, panX = 0, panY = 0, brightness = 100, filter = 'normal' } = params;
   
-  // 1. Initialize Sharp instance
-  let img = sharp(photoBuffer);
+  // 1. Initialize Sharp instance with EXIF auto-rotation
+  let img = sharp(photoBuffer).rotate();
   
   // 2. Apply Brightness Correction
   if (brightness !== 100) {
     img = img.modulate({
-      brightness: brightness / 100
+      brightness: Math.max(0.1, brightness / 100)
     });
   }
   
   // 3. Apply Color Filter Presets
-  const f = filter.toLowerCase();
+  const f = (filter || '').toLowerCase();
   if (f === 'grayscale') {
     img = img.greyscale();
   } else if (f === 'sepia') {
-    img = img.recolor([
-      [0.393, 0.769, 0.189],
-      [0.349, 0.686, 0.168],
-      [0.272, 0.534, 0.131]
-    ]);
+    img = img.modulate({ saturation: 0.75 }).tint({ r: 112, g: 66, b: 20 });
   } else if (f === 'cool') {
     img = img.modulate({ saturation: 1.1 }).tint({ r: 25, g: 50, b: 90 });
   } else if (f === 'warm') {
@@ -72,18 +68,18 @@ async function processUserPhoto(photoBuffer, params, targetWidth = 360, targetHe
 
   // baseScale is fit-to-box scale (contain fit)
   const baseScale = Math.min(targetWidth / originalWidth, targetHeight / originalHeight);
-  const finalScale = baseScale * zoom;
+  const finalScale = (baseScale * zoom) || baseScale || 1.0;
   
-  const resizedWidth = Math.round(originalWidth * finalScale);
-  const resizedHeight = Math.round(originalHeight * finalScale);
+  const resizedWidth = Math.max(1, Math.round(originalWidth * finalScale));
+  const resizedHeight = Math.max(1, Math.round(originalHeight * finalScale));
   
   const resizedBuffer = await img
     .resize(resizedWidth, resizedHeight)
     .png()
     .toBuffer();
 
-  // 5. Composite the resized photo onto a solid background canvas (failsafe against out-of-bounds crop)
-  const canvasBg = isFrame ? '#00000000' : '#F3F4F0';
+  // 5. Composite the resized photo onto a background canvas (failsafe against out-of-bounds crop)
+  const canvasBg = isFrame ? 'none' : '#F3F4F0';
   const canvasSvg = Buffer.from(
     `<svg width="${targetWidth}" height="${targetHeight}">
        <rect width="100%" height="100%" fill="${canvasBg}" />
@@ -91,8 +87,8 @@ async function processUserPhoto(photoBuffer, params, targetWidth = 360, targetHe
   );
   
   // Centered position + user pan offsets
-  const left = Math.round(targetWidth / 2 - resizedWidth / 2 + panX);
-  const top = Math.round(targetHeight / 2 - resizedHeight / 2 + panY);
+  const left = Math.round(targetWidth / 2 - resizedWidth / 2 + (panX || 0));
+  const top = Math.round(targetHeight / 2 - resizedHeight / 2 + (panY || 0));
   
   return await sharp(canvasSvg)
     .composite([{

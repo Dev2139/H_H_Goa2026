@@ -27,20 +27,27 @@ app.use(helmet({
 }));
 
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:5173',
+  process.env.FRONTEND_URL,
   'http://localhost:5173',
+  'http://localhost:3000',
   'http://127.0.0.1:5173',
-  'https://hh-goa-frame-generator.vercel.app' // Example production URL
-];
+  'https://hh-goa-frame-generator.vercel.app'
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // allow requests with no origin (like mobile apps or curl)
+    // Allow requests with no origin (like mobile apps, curl, or server-to-server)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.some(o => origin.startsWith(o))) {
+    
+    // Check if origin matches allowed origins list or is a netlify/vercel deployment
+    const isAllowed = allowedOrigins.some(o => origin === o || origin.startsWith(o)) ||
+                      origin.endsWith('.netlify.app') ||
+                      origin.endsWith('.vercel.app');
+
+    if (isAllowed || process.env.NODE_ENV !== 'production') {
       return callback(null, true);
     }
-    return callback(new Error('CORS Policy: Origin not allowed'), false);
+    return callback(new Error(`CORS Policy: Origin ${origin} not allowed`), false);
   },
   credentials: true
 }));
@@ -104,20 +111,31 @@ app.use((err, req, res, next) => {
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/hh-goa-2026';
 
 let isConnected = false;
+let isConnecting = false;
+
 const connectDB = async () => {
-  if (isConnected) return;
+  if (isConnected || isConnecting) return;
+  if (!process.env.MONGODB_URI && process.env.NODE_ENV === 'production') {
+    return; // Skip if no URI provided in production
+  }
+  
+  isConnecting = true;
   try {
-    const db = await mongoose.connect(MONGODB_URI);
+    const db = await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 4000
+    });
     isConnected = db.connections[0].readyState === 1;
     console.log('Connected to MongoDB Database.');
   } catch (err) {
-    console.error('MongoDB database connection error:', err);
+    console.error('MongoDB database connection error:', err.message);
+  } finally {
+    isConnecting = false;
   }
 };
 
 // Ensure database connection is active for every incoming API request
 app.use(async (req, res, next) => {
-  await connectDB();
+  connectDB().catch(() => {});
   next();
 });
 

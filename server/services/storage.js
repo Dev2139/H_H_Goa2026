@@ -59,24 +59,29 @@ export const uploadImage = async (buffer, filename, folder = 'hh-goa-2026', req 
         uploadStream.end(buffer);
       });
     } catch (uploadError) {
-      console.warn('Cloudinary upload failed, falling back to local static disk storage:', uploadError.message || uploadError);
+      console.warn('Cloudinary upload failed, attempting local/base64 fallback:', uploadError.message || uploadError);
     }
   }
 
-  // Local fallback storage
-  const localFilePath = path.join(uploadsDir, filename);
-  await fs.promises.writeFile(localFilePath, buffer);
-  
-  // Construct dynamic server URL based on the request
-  if (req) {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.get('host');
-    return `${protocol}://${host}/uploads/${filename}`;
+  // Local fallback storage attempt
+  try {
+    const localFilePath = path.join(uploadsDir, filename);
+    await fs.promises.writeFile(localFilePath, buffer);
+    
+    // Construct dynamic server URL based on the request
+    if (req) {
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+      const host = req.get('host');
+      return `${protocol}://${host}/uploads/${filename}`;
+    }
+    
+    const port = process.env.PORT || 5000;
+    return `http://localhost:${port}/uploads/${filename}`;
+  } catch (fsError) {
+    console.warn('Local filesystem write failed (e.g. serverless environment), returning Base64 data URL:', fsError.message);
+    // Base64 Data URL fallback guarantees the generated image works anywhere
+    return `data:image/png;base64,${buffer.toString('base64')}`;
   }
-  
-  // If request context isn't available, return fallback relative path
-  const port = process.env.PORT || 5000;
-  return `http://localhost:${port}/uploads/${filename}`;
 };
 
 /**
